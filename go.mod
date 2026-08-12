@@ -1,4 +1,4 @@
-module github.com/cloakd/base58
+module github.com/fluxrpc/base58
 
 go 1.26.1
 
