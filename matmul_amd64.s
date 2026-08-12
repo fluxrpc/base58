@@ -1,0 +1,1047 @@
+#include "textflag.h"
+
+// func encodeMatMul32Scalar(src *[32]byte, intermediate *[9]uint64)
+//
+// Byte-swaps src into 8 x uint32, then computes:
+//   intermediate[k+1] += bin[i] * encTable32[i][k]   for i,k in 0..7
+//
+// All 8 accumulators live in R8..R15. bin[i] is loaded fresh per row into BX.
+// Table entries are 32-bit, loaded into AX with MOVL (zero-extending to 64 bits).
+// Fully unrolled, zero table entries skipped.
+//
+// Register map:
+//   SI  = src pointer
+//   DI  = intermediate pointer
+//   DX  = encTable32 base
+//   BX  = current bin[i] (zero-extended u32)
+//   AX  = scratch: table entry, then product
+//   R8..R15 = intermediate[1..8] accumulators
+TEXT ·encodeMatMul32Scalar(SB), NOSPLIT|NOFRAME, $0-16
+	MOVQ	src+0(FP), SI
+	MOVQ	intermediate+8(FP), DI
+	LEAQ	·encTable32(SB), DX
+
+	// Zero accumulators.
+	XORQ	R8, R8
+	XORQ	R9, R9
+	XORQ	R10, R10
+	XORQ	R11, R11
+	XORQ	R12, R12
+	XORQ	R13, R13
+	XORQ	R14, R14
+	XORQ	R15, R15
+
+	// Row 0: bin[0] = bswap(src[0..4])
+	MOVL	0(SI), BX
+	BSWAPL	BX
+	MOVL	0(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R8
+	MOVL	4(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R9
+	MOVL	8(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R10
+	MOVL	12(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R11
+	MOVL	16(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R12
+	MOVL	20(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R13
+	MOVL	24(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R14
+	MOVL	28(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R15
+
+	// Row 1: bin[1], k=1..7 (table[1][0] = 0)
+	MOVL	4(SI), BX
+	BSWAPL	BX
+	MOVL	36(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R9
+	MOVL	40(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R10
+	MOVL	44(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R11
+	MOVL	48(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R12
+	MOVL	52(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R13
+	MOVL	56(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R14
+	MOVL	60(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R15
+
+	// Row 2: bin[2], k=2..7
+	MOVL	8(SI), BX
+	BSWAPL	BX
+	MOVL	72(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R10
+	MOVL	76(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R11
+	MOVL	80(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R12
+	MOVL	84(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R13
+	MOVL	88(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R14
+	MOVL	92(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R15
+
+	// Row 3: bin[3], k=3..7
+	MOVL	12(SI), BX
+	BSWAPL	BX
+	MOVL	108(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R11
+	MOVL	112(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R12
+	MOVL	116(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R13
+	MOVL	120(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R14
+	MOVL	124(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R15
+
+	// Row 4: bin[4], k=4..7
+	MOVL	16(SI), BX
+	BSWAPL	BX
+	MOVL	144(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R12
+	MOVL	148(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R13
+	MOVL	152(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R14
+	MOVL	156(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R15
+
+	// Row 5: bin[5], k=5..7
+	MOVL	20(SI), BX
+	BSWAPL	BX
+	MOVL	180(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R13
+	MOVL	184(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R14
+	MOVL	188(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R15
+
+	// Row 6: bin[6], k=6..7
+	MOVL	24(SI), BX
+	BSWAPL	BX
+	MOVL	216(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R14
+	MOVL	220(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R15
+
+	// Row 7: bin[7], k=7 only
+	MOVL	28(SI), BX
+	BSWAPL	BX
+	MOVL	252(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R15
+
+	// Store intermediate[0..8]. intermediate[0] = 0.
+	MOVQ	$0, 0(DI)
+	MOVQ	R8, 8(DI)
+	MOVQ	R9, 16(DI)
+	MOVQ	R10, 24(DI)
+	MOVQ	R11, 32(DI)
+	MOVQ	R12, 40(DI)
+	MOVQ	R13, 48(DI)
+	MOVQ	R14, 56(DI)
+	MOVQ	R15, 64(DI)
+	RET
+
+// func decodeMatMul32Scalar(intermediate *[9]uint64, bin *[8]uint64)
+//
+// Computes: bin[k] = sum_i intermediate[i] * decTable32[i][k]
+//
+// intermediate[i] values are guaranteed < 58^5 (< 2^30), so the low 32 bits
+// of each intermediate contain the full value. We load with MOVL for zero-
+// extension.
+//
+// Register map:
+//   SI  = intermediate pointer
+//   DI  = bin pointer
+//   DX  = decTable32 base
+//   BX  = current intermediate[i]
+//   AX  = scratch: table entry, then product
+//   R8..R15 = bin[0..7] accumulators
+TEXT ·decodeMatMul32Scalar(SB), NOSPLIT|NOFRAME, $0-16
+	MOVQ	intermediate+0(FP), SI
+	MOVQ	bin+8(FP), DI
+	LEAQ	·decTable32(SB), DX
+
+	// Zero accumulators.
+	XORQ	R8, R8
+	XORQ	R9, R9
+	XORQ	R10, R10
+	XORQ	R11, R11
+	XORQ	R12, R12
+	XORQ	R13, R13
+	XORQ	R14, R14
+	XORQ	R15, R15
+
+	// Row 0: intermediate[0], k=0..6 (table[0][7] = 0)
+	MOVL	0(SI), BX
+	MOVL	0(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R8
+	MOVL	4(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R9
+	MOVL	8(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R10
+	MOVL	12(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R11
+	MOVL	16(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R12
+	MOVL	20(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R13
+	MOVL	24(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R14
+
+	// Row 1: intermediate[1], k=1..6 (table[1][0] = 0, table[1][7] = 0)
+	MOVL	8(SI), BX
+	MOVL	36(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R9
+	MOVL	40(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R10
+	MOVL	44(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R11
+	MOVL	48(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R12
+	MOVL	52(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R13
+	MOVL	56(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R14
+
+	// Row 2: intermediate[2], k=2..7
+	MOVL	16(SI), BX
+	MOVL	72(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R10
+	MOVL	76(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R11
+	MOVL	80(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R12
+	MOVL	84(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R13
+	MOVL	88(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R14
+	MOVL	92(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R15
+
+	// Row 3: intermediate[3], k=3..7
+	MOVL	24(SI), BX
+	MOVL	108(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R11
+	MOVL	112(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R12
+	MOVL	116(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R13
+	MOVL	120(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R14
+	MOVL	124(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R15
+
+	// Row 4: intermediate[4], k=4..7
+	MOVL	32(SI), BX
+	MOVL	144(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R12
+	MOVL	148(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R13
+	MOVL	152(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R14
+	MOVL	156(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R15
+
+	// Row 5: intermediate[5], k=5..7
+	MOVL	40(SI), BX
+	MOVL	180(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R13
+	MOVL	184(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R14
+	MOVL	188(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R15
+
+	// Row 6: intermediate[6], k=6..7
+	MOVL	48(SI), BX
+	MOVL	216(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R14
+	MOVL	220(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R15
+
+	// Row 7: intermediate[7], k=7 only
+	MOVL	56(SI), BX
+	MOVL	252(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, R15
+
+	// Row 8: table[8] = {0,0,0,0,0,0,0,1} -> bin[7] += intermediate[8]
+	MOVQ	64(SI), BX
+	ADDQ	BX, R15
+
+	// Store bin[0..7].
+	MOVQ	R8, 0(DI)
+	MOVQ	R9, 8(DI)
+	MOVQ	R10, 16(DI)
+	MOVQ	R11, 24(DI)
+	MOVQ	R12, 32(DI)
+	MOVQ	R13, 40(DI)
+	MOVQ	R14, 48(DI)
+	MOVQ	R15, 56(DI)
+	RET
+
+// func encodeMatMul64Head(src *[64]byte, intermediate *[18]uint64)
+//
+// Accumulates rows 0-7 of the 64-byte encode matmul into intermediate
+// (which the caller must zero):
+//   intermediate[k+1] += bswap32(src[4i:4i+4]) * encTable64[i][k]
+// Zero table entries are skipped. Accumulators live in memory (17 columns
+// exceed the GPR budget); rows 8-15 are handled by encodeMatMul32 since
+// encTable64 rows 8-15 equal encTable32 shifted 9 columns.
+TEXT ·encodeMatMul64Head(SB), NOSPLIT|NOFRAME, $0-16
+	MOVQ	src+0(FP), SI
+	MOVQ	intermediate+8(FP), DI
+	LEAQ	·encTable64(SB), DX
+
+	// Row 0: bin[0], k=0..16
+	MOVL	0(SI), BX
+	BSWAPL	BX
+	MOVL	0(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 8(DI)
+	MOVL	4(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 16(DI)
+	MOVL	8(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 24(DI)
+	MOVL	12(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 32(DI)
+	MOVL	16(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 40(DI)
+	MOVL	20(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 48(DI)
+	MOVL	24(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 56(DI)
+	MOVL	28(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 64(DI)
+	MOVL	32(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 72(DI)
+	MOVL	36(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 80(DI)
+	MOVL	40(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 88(DI)
+	MOVL	44(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 96(DI)
+	MOVL	48(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 104(DI)
+	MOVL	52(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 112(DI)
+	MOVL	56(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 120(DI)
+	MOVL	60(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 128(DI)
+	MOVL	64(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 136(DI)
+
+	// Row 1: bin[1], k=1..16
+	MOVL	4(SI), BX
+	BSWAPL	BX
+	MOVL	72(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 16(DI)
+	MOVL	76(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 24(DI)
+	MOVL	80(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 32(DI)
+	MOVL	84(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 40(DI)
+	MOVL	88(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 48(DI)
+	MOVL	92(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 56(DI)
+	MOVL	96(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 64(DI)
+	MOVL	100(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 72(DI)
+	MOVL	104(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 80(DI)
+	MOVL	108(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 88(DI)
+	MOVL	112(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 96(DI)
+	MOVL	116(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 104(DI)
+	MOVL	120(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 112(DI)
+	MOVL	124(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 120(DI)
+	MOVL	128(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 128(DI)
+	MOVL	132(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 136(DI)
+
+	// Row 2: bin[2], k=2..16
+	MOVL	8(SI), BX
+	BSWAPL	BX
+	MOVL	144(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 24(DI)
+	MOVL	148(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 32(DI)
+	MOVL	152(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 40(DI)
+	MOVL	156(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 48(DI)
+	MOVL	160(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 56(DI)
+	MOVL	164(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 64(DI)
+	MOVL	168(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 72(DI)
+	MOVL	172(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 80(DI)
+	MOVL	176(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 88(DI)
+	MOVL	180(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 96(DI)
+	MOVL	184(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 104(DI)
+	MOVL	188(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 112(DI)
+	MOVL	192(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 120(DI)
+	MOVL	196(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 128(DI)
+	MOVL	200(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 136(DI)
+
+	// Row 3: bin[3], k=3..16
+	MOVL	12(SI), BX
+	BSWAPL	BX
+	MOVL	216(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 32(DI)
+	MOVL	220(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 40(DI)
+	MOVL	224(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 48(DI)
+	MOVL	228(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 56(DI)
+	MOVL	232(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 64(DI)
+	MOVL	236(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 72(DI)
+	MOVL	240(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 80(DI)
+	MOVL	244(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 88(DI)
+	MOVL	248(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 96(DI)
+	MOVL	252(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 104(DI)
+	MOVL	256(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 112(DI)
+	MOVL	260(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 120(DI)
+	MOVL	264(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 128(DI)
+	MOVL	268(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 136(DI)
+
+	// Row 4: bin[4], k=4..16
+	MOVL	16(SI), BX
+	BSWAPL	BX
+	MOVL	288(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 40(DI)
+	MOVL	292(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 48(DI)
+	MOVL	296(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 56(DI)
+	MOVL	300(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 64(DI)
+	MOVL	304(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 72(DI)
+	MOVL	308(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 80(DI)
+	MOVL	312(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 88(DI)
+	MOVL	316(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 96(DI)
+	MOVL	320(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 104(DI)
+	MOVL	324(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 112(DI)
+	MOVL	328(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 120(DI)
+	MOVL	332(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 128(DI)
+	MOVL	336(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 136(DI)
+
+	// Row 5: bin[5], k=6..16
+	MOVL	20(SI), BX
+	BSWAPL	BX
+	MOVL	364(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 56(DI)
+	MOVL	368(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 64(DI)
+	MOVL	372(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 72(DI)
+	MOVL	376(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 80(DI)
+	MOVL	380(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 88(DI)
+	MOVL	384(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 96(DI)
+	MOVL	388(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 104(DI)
+	MOVL	392(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 112(DI)
+	MOVL	396(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 120(DI)
+	MOVL	400(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 128(DI)
+	MOVL	404(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 136(DI)
+
+	// Row 6: bin[6], k=7..16
+	MOVL	24(SI), BX
+	BSWAPL	BX
+	MOVL	436(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 64(DI)
+	MOVL	440(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 72(DI)
+	MOVL	444(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 80(DI)
+	MOVL	448(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 88(DI)
+	MOVL	452(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 96(DI)
+	MOVL	456(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 104(DI)
+	MOVL	460(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 112(DI)
+	MOVL	464(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 120(DI)
+	MOVL	468(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 128(DI)
+	MOVL	472(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 136(DI)
+
+	// Row 7: bin[7], k=8..16
+	MOVL	28(SI), BX
+	BSWAPL	BX
+	MOVL	508(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 72(DI)
+	MOVL	512(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 80(DI)
+	MOVL	516(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 88(DI)
+	MOVL	520(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 96(DI)
+	MOVL	524(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 104(DI)
+	MOVL	528(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 112(DI)
+	MOVL	532(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 120(DI)
+	MOVL	536(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 128(DI)
+	MOVL	540(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 136(DI)
+	RET
+
+// func decodeMatMul64Head(intermediate *[18]uint64, bin *[16]uint64)
+//
+// Accumulates rows 0-8 of the 64-byte decode matmul into bin (which the
+// caller must zero): bin[k] += intermediate[i] * decTable64[i][k].
+// intermediate values are < 58^5 (< 2^30) so MOVL zero-extension is safe.
+// Zero table entries are skipped. Rows 9-17 are handled by decodeMatMul32
+// since decTable64 rows 9-17 equal decTable32 shifted 8 columns.
+TEXT ·decodeMatMul64Head(SB), NOSPLIT|NOFRAME, $0-16
+	MOVQ	intermediate+0(FP), SI
+	MOVQ	bin+8(FP), DI
+	LEAQ	·decTable64(SB), DX
+
+	// Row 0: intermediate[0], k=0..13
+	MOVL	0(SI), BX
+	MOVL	0(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 0(DI)
+	MOVL	4(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 8(DI)
+	MOVL	8(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 16(DI)
+	MOVL	12(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 24(DI)
+	MOVL	16(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 32(DI)
+	MOVL	20(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 40(DI)
+	MOVL	24(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 48(DI)
+	MOVL	28(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 56(DI)
+	MOVL	32(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 64(DI)
+	MOVL	36(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 72(DI)
+	MOVL	40(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 80(DI)
+	MOVL	44(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 88(DI)
+	MOVL	48(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 96(DI)
+	MOVL	52(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 104(DI)
+
+	// Row 1: intermediate[1], k=1..13
+	MOVL	8(SI), BX
+	MOVL	68(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 8(DI)
+	MOVL	72(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 16(DI)
+	MOVL	76(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 24(DI)
+	MOVL	80(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 32(DI)
+	MOVL	84(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 40(DI)
+	MOVL	88(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 48(DI)
+	MOVL	92(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 56(DI)
+	MOVL	96(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 64(DI)
+	MOVL	100(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 72(DI)
+	MOVL	104(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 80(DI)
+	MOVL	108(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 88(DI)
+	MOVL	112(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 96(DI)
+	MOVL	116(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 104(DI)
+
+	// Row 2: intermediate[2], k=2..13
+	MOVL	16(SI), BX
+	MOVL	136(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 16(DI)
+	MOVL	140(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 24(DI)
+	MOVL	144(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 32(DI)
+	MOVL	148(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 40(DI)
+	MOVL	152(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 48(DI)
+	MOVL	156(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 56(DI)
+	MOVL	160(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 64(DI)
+	MOVL	164(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 72(DI)
+	MOVL	168(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 80(DI)
+	MOVL	172(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 88(DI)
+	MOVL	176(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 96(DI)
+	MOVL	180(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 104(DI)
+
+	// Row 3: intermediate[3], k=3..13
+	MOVL	24(SI), BX
+	MOVL	204(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 24(DI)
+	MOVL	208(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 32(DI)
+	MOVL	212(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 40(DI)
+	MOVL	216(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 48(DI)
+	MOVL	220(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 56(DI)
+	MOVL	224(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 64(DI)
+	MOVL	228(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 72(DI)
+	MOVL	232(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 80(DI)
+	MOVL	236(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 88(DI)
+	MOVL	240(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 96(DI)
+	MOVL	244(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 104(DI)
+
+	// Row 4: intermediate[4], k=4..13
+	MOVL	32(SI), BX
+	MOVL	272(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 32(DI)
+	MOVL	276(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 40(DI)
+	MOVL	280(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 48(DI)
+	MOVL	284(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 56(DI)
+	MOVL	288(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 64(DI)
+	MOVL	292(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 72(DI)
+	MOVL	296(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 80(DI)
+	MOVL	300(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 88(DI)
+	MOVL	304(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 96(DI)
+	MOVL	308(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 104(DI)
+
+	// Row 5: intermediate[5], k=5..14
+	MOVL	40(SI), BX
+	MOVL	340(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 40(DI)
+	MOVL	344(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 48(DI)
+	MOVL	348(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 56(DI)
+	MOVL	352(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 64(DI)
+	MOVL	356(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 72(DI)
+	MOVL	360(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 80(DI)
+	MOVL	364(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 88(DI)
+	MOVL	368(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 96(DI)
+	MOVL	372(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 104(DI)
+	MOVL	376(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 112(DI)
+
+	// Row 6: intermediate[6], k=5..14
+	MOVL	48(SI), BX
+	MOVL	404(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 40(DI)
+	MOVL	408(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 48(DI)
+	MOVL	412(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 56(DI)
+	MOVL	416(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 64(DI)
+	MOVL	420(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 72(DI)
+	MOVL	424(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 80(DI)
+	MOVL	428(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 88(DI)
+	MOVL	432(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 96(DI)
+	MOVL	436(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 104(DI)
+	MOVL	440(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 112(DI)
+
+	// Row 7: intermediate[7], k=6..14
+	MOVL	56(SI), BX
+	MOVL	472(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 48(DI)
+	MOVL	476(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 56(DI)
+	MOVL	480(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 64(DI)
+	MOVL	484(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 72(DI)
+	MOVL	488(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 80(DI)
+	MOVL	492(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 88(DI)
+	MOVL	496(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 96(DI)
+	MOVL	500(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 104(DI)
+	MOVL	504(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 112(DI)
+
+	// Row 8: intermediate[8], k=7..14
+	MOVL	64(SI), BX
+	MOVL	540(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 56(DI)
+	MOVL	544(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 64(DI)
+	MOVL	548(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 72(DI)
+	MOVL	552(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 80(DI)
+	MOVL	556(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 88(DI)
+	MOVL	560(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 96(DI)
+	MOVL	564(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 104(DI)
+	MOVL	568(DX), AX
+	IMULQ	BX, AX
+	ADDQ	AX, 112(DI)
+	RET
