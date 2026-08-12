@@ -6,6 +6,8 @@ matrix-multiply fast paths (AVX2 assembly on amd64 with scalar-assembly and
 pure-Go fallbacks), and all other lengths use a limb-based codec that is
 ~10-30x faster than the classic byte-at-a-time long division.
 
+Created & used heavily by [FluxRPC.com](https://FluxRPC.com) - The most performant Solana RPC Provider.
+
 ## API
 
 ```go
