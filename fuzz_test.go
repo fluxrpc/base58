@@ -24,9 +24,13 @@ func FuzzEncode32_MatchesVariable(f *testing.F) {
 		copy(src[:], data)
 
 		fast := Encode32(&src)
+		appendFast := AppendEncode32(make([]byte, 0, EncodedMaxLen32), &src)
 		generic := encodeVariable(src[:])
 		if fast != generic {
 			t.Fatalf("Encode32 mismatch for %x:\n  fast:    %s\n  generic: %s", src, fast, generic)
+		}
+		if string(appendFast) != generic {
+			t.Fatalf("AppendEncode32 mismatch for %x:\n  fast:    %s\n  generic: %s", src, appendFast, generic)
 		}
 	})
 }
@@ -44,9 +48,13 @@ func FuzzEncode64_MatchesVariable(f *testing.F) {
 		copy(src[:], data)
 
 		fast := Encode64(&src)
+		appendFast := AppendEncode64(make([]byte, 0, EncodedMaxLen64), &src)
 		generic := encodeVariable(src[:])
 		if fast != generic {
 			t.Fatalf("Encode64 mismatch for %x:\n  fast:    %s\n  generic: %s", src, fast, generic)
+		}
+		if string(appendFast) != generic {
+			t.Fatalf("AppendEncode64 mismatch for %x:\n  fast:    %s\n  generic: %s", src, appendFast, generic)
 		}
 	})
 }

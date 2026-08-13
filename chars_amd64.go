@@ -3,7 +3,23 @@
 package base58
 
 //go:noescape
+func encode64DirectAVX2(src *[64]byte, out *byte) int
+
+func appendEncode64Fast(dst []byte, src *[64]byte) ([]byte, bool) {
+	start := len(dst)
+	if !useAVX2 || cap(dst)-start < EncodedMaxLen64 {
+		return nil, false
+	}
+	storage := dst[:cap(dst)]
+	n := encode64DirectAVX2(src, &storage[start])
+	return storage[:start+n], true
+}
+
+//go:noescape
 func digitsToChars8(v *uint64, out *byte)
+
+//go:noescape
+func digitsToChars16Fast(v *uint64, out *byte)
 
 //go:noescape
 func digitsToChars16(v *uint64, out *byte)
@@ -21,7 +37,7 @@ func extractChars32(intermediate *[intermediateSz32]uint64, raw *[raw58Buf32]byt
 // second call's overhang at raw[80:86]).
 func extractChars64(intermediate *[intermediateSz64]uint64, raw *[raw58Sz64]byte) {
 	if useAVX2 {
-		digitsToChars16(&intermediate[0], &raw[0])
+		digitsToChars16Fast(&intermediate[0], &raw[0])
 		extractChars5(uint32(intermediate[16]), raw[80:85])
 		extractChars5(uint32(intermediate[17]), raw[85:90])
 		return
@@ -72,7 +88,7 @@ func encode64Write(intermediate *[intermediateSz64]uint64, iz, dc, inZeros int, 
 		return
 	}
 	var raw [raw58Sz64]byte
-	digitsToChars16(&intermediate[0], &raw[0])
+	digitsToChars16Fast(&intermediate[0], &raw[0])
 	extractChars5(uint32(intermediate[16]), raw[80:85])
 	extractChars5(uint32(intermediate[17]), raw[85:90])
 	copy(out, raw[raw58Sz64-len(out):])

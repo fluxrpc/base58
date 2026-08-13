@@ -299,6 +299,10 @@ DATA b58m1<>+0(SB)/8, $74051161
 GLOBL b58m1<>(SB), RODATA, $8
 DATA b58d1<>+0(SB)/8, $58
 GLOBL b58d1<>(SB), RODATA, $8
+DATA b58div58<>+0(SB)/8, $2369637129
+GLOBL b58div58<>(SB), RODATA, $8
+DATA b58div3364<>+0(SB)/8, $1307386003
+GLOBL b58div3364<>(SB), RODATA, $8
 DATA b58shuf0<>+0(SB)/8, $0x8080088080808000
 DATA b58shuf0<>+8(SB)/8, $0x8080808080808080
 DATA b58shuf0<>+16(SB)/8, $0x8080088080808000
@@ -497,6 +501,626 @@ TEXT ·digitsToChars8(SB), NOSPLIT, $0-16
 	VMOVDQU	X2, 20(DI)
 	VEXTRACTI128	$1, Y2, X2
 	VMOVDQU	X2, 30(DI)
+
+	VZEROUPPER
+	RET
+
+// func AppendEncode32(dst []byte, src *[32]byte) []byte
+//
+// Fuses matrix multiplication, carry propagation, pair-LUT digit extraction,
+// trimming, and final stores.  Each normalized remainder is rendered as soon
+// as it leaves the serial carry chain, preserving the overlap that makes the
+// scalar pair renderer effective at this small fixed size.
+#define RENDER5(O) \
+	MOVL R8, AX; \
+	MOVQ AX, BX; \
+	SHRQ $1, BX; \
+	IMULQ R13, BX; \
+	MOVQ BX, R9; \
+	SHRQ $42, BX; \
+	MOVL BX, CX; \
+	IMULL R15, CX; \
+	SUBL CX, AX; \
+	LEAQ ·base58Pairs(SB), CX; \
+	MOVWLZX (CX)(AX*2), AX; \
+	MOVW AX, O+3(DI); \
+	SHRQ $43, R9; \
+	IMULQ R13, R9; \
+	SHRQ $42, R9; \
+	MOVL R9, AX; \
+	IMULL R15, AX; \
+	SUBL AX, BX; \
+	MOVWLZX (CX)(BX*2), AX; \
+	MOVW AX, O+1(DI); \
+	LEAQ ·base58Chars(SB), CX; \
+	MOVBLZX (CX)(R9*1), AX; \
+	MOVB AX, O(DI)
+
+TEXT ·AppendEncode32(SB), NOSPLIT, $192-56
+	CMPB	·useAVX2(SB), $0
+	JEQ	append32_slow
+	MOVQ	dst_cap+16(FP), AX
+	SUBQ	dst_len+8(FP), AX
+	CMPQ	AX, $44
+	JLT	append32_slow
+
+	MOVQ	src+24(FP), SI
+	LEAQ	128(SP), DI
+	LEAQ	56(SP), R12
+	LEAQ	·encWide32(SB), DX
+	VPXOR	Y0, Y0, Y0
+	VPXOR	Y1, Y1, Y1
+	VMOVDQU	bswapd<>(SB), Y7
+
+	VPBROADCASTD	0(SI), Y2
+	VPSHUFB	Y7, Y2, Y2
+	VPMULUDQ	0(DX), Y2, Y3
+	VPADDQ	Y3, Y0, Y0
+	VPMULUDQ	32(DX), Y2, Y3
+	VPADDQ	Y3, Y1, Y1
+	VPBROADCASTD	4(SI), Y2
+	VPSHUFB	Y7, Y2, Y2
+	VPMULUDQ	64(DX), Y2, Y3
+	VPADDQ	Y3, Y0, Y0
+	VPMULUDQ	96(DX), Y2, Y3
+	VPADDQ	Y3, Y1, Y1
+	VPBROADCASTD	8(SI), Y2
+	VPSHUFB	Y7, Y2, Y2
+	VPMULUDQ	128(DX), Y2, Y3
+	VPADDQ	Y3, Y0, Y0
+	VPMULUDQ	160(DX), Y2, Y3
+	VPADDQ	Y3, Y1, Y1
+	VPBROADCASTD	12(SI), Y2
+	VPSHUFB	Y7, Y2, Y2
+	VPMULUDQ	192(DX), Y2, Y3
+	VPADDQ	Y3, Y0, Y0
+	VPMULUDQ	224(DX), Y2, Y3
+	VPADDQ	Y3, Y1, Y1
+	VPBROADCASTD	16(SI), Y2
+	VPSHUFB	Y7, Y2, Y2
+	VPMULUDQ	288(DX), Y2, Y3
+	VPADDQ	Y3, Y1, Y1
+	VPBROADCASTD	20(SI), Y2
+	VPSHUFB	Y7, Y2, Y2
+	VPMULUDQ	352(DX), Y2, Y3
+	VPADDQ	Y3, Y1, Y1
+	VPBROADCASTD	24(SI), Y2
+	VPSHUFB	Y7, Y2, Y2
+	VPMULUDQ	416(DX), Y2, Y3
+	VPADDQ	Y3, Y1, Y1
+	VPBROADCASTD	28(SI), Y2
+	VPSHUFB	Y7, Y2, Y2
+	VPMULUDQ	480(DX), Y2, Y3
+	VPADDQ	Y3, Y1, Y1
+
+	MOVQ	$0, 0(R12)
+	VMOVDQU	Y0, 8(R12)
+	VMOVDQU	Y1, 40(R12)
+
+	// q = high64(v * 0x68b2c7ad1a016ab5) >> 28.  Normalize from the
+	// least-significant limb toward the most-significant limb.
+	MOVQ	$0x68b2c7ad1a016ab5, R11
+	MOVQ	$656356768, R10
+	MOVQ	$0x9bda4125, R13
+	MOVQ	$3364, R15
+	MOVQ	64(R12), R8
+	MOVQ	R8, AX
+	MULQ	R11
+	SHRQ	$28, DX
+	MOVQ	DX, R9
+	IMULQ	R10, R9
+	SUBQ	R9, R8
+	MOVQ	DX, R14
+	RENDER5(40)
+	MOVQ	R14, DX
+	ADDQ	56(R12), DX
+	MOVQ	DX, R8
+	MOVQ	R8, AX
+	MULQ	R11
+	SHRQ	$28, DX
+	MOVQ	DX, R9
+	IMULQ	R10, R9
+	SUBQ	R9, R8
+	MOVQ	DX, R14
+	RENDER5(35)
+	MOVQ	R14, DX
+	ADDQ	48(R12), DX
+	MOVQ	DX, R8
+	MOVQ	R8, AX
+	MULQ	R11
+	SHRQ	$28, DX
+	MOVQ	DX, R9
+	IMULQ	R10, R9
+	SUBQ	R9, R8
+	MOVQ	DX, R14
+	RENDER5(30)
+	MOVQ	R14, DX
+	ADDQ	40(R12), DX
+	MOVQ	DX, R8
+	MOVQ	R8, AX
+	MULQ	R11
+	SHRQ	$28, DX
+	MOVQ	DX, R9
+	IMULQ	R10, R9
+	SUBQ	R9, R8
+	MOVQ	DX, R14
+	RENDER5(25)
+	MOVQ	R14, DX
+	ADDQ	32(R12), DX
+	MOVQ	DX, R8
+	MOVQ	R8, AX
+	MULQ	R11
+	SHRQ	$28, DX
+	MOVQ	DX, R9
+	IMULQ	R10, R9
+	SUBQ	R9, R8
+	MOVQ	DX, R14
+	RENDER5(20)
+	MOVQ	R14, DX
+	ADDQ	24(R12), DX
+	MOVQ	DX, R8
+	MOVQ	R8, AX
+	MULQ	R11
+	SHRQ	$28, DX
+	MOVQ	DX, R9
+	IMULQ	R10, R9
+	SUBQ	R9, R8
+	MOVQ	DX, R14
+	RENDER5(15)
+	MOVQ	R14, DX
+	ADDQ	16(R12), DX
+	MOVQ	DX, R8
+	MOVQ	R8, AX
+	MULQ	R11
+	SHRQ	$28, DX
+	MOVQ	DX, R9
+	IMULQ	R10, R9
+	SUBQ	R9, R8
+	MOVQ	DX, R14
+	RENDER5(10)
+	MOVQ	R14, DX
+	ADDQ	8(R12), DX
+	MOVQ	DX, R8
+	MOVQ	R8, AX
+	MULQ	R11
+	SHRQ	$28, DX
+	MOVQ	DX, R9
+	IMULQ	R10, R9
+	SUBQ	R9, R8
+	MOVQ	DX, R14
+	RENDER5(5)
+	MOVQ	R14, DX
+	ADDQ	0(R12), DX
+	MOVQ	DX, R8
+	RENDER5(0)
+
+	// A non-zero first byte guarantees a 43- or 44-character result, so the
+	// fixed 45-digit stream has exactly one or two leading zero digits.  This
+	// is overwhelmingly the common case and avoids both leading-zero loops.
+	MOVQ	src+24(FP), SI
+	XORQ	CX, CX
+	CMPB	0(SI), $0
+	JEQ	direct_scan_zeros
+	MOVQ	$1, DX
+	CMPB	1(DI), $'1'
+	JNE	direct_raw_done
+	INCQ	DX
+	JMP	direct_raw_done
+
+	// Leading-zero inputs use the fully general scans.
+direct_scan_zeros:
+direct_in_zeros:
+	CMPQ	CX, $32
+	JEQ	direct_in_done
+	CMPB	0(SI)(CX*1), $0
+	JNE	direct_in_done
+	INCQ	CX
+	JMP	direct_in_zeros
+direct_in_done:
+
+	// rawZeros = leading zero digits, represented by '1' characters.
+	XORQ	DX, DX
+direct_raw_zeros:
+	CMPQ	DX, $45
+	JEQ	direct_raw_done
+	CMPB	0(DI)(DX*1), $'1'
+	JNE	direct_raw_done
+	INCQ	DX
+	JMP	direct_raw_zeros
+direct_raw_done:
+	SUBQ	CX, DX                    // skip = rawZeros - inZeros
+	MOVQ	$45, AX
+	SUBQ	DX, AX                    // output length
+	ADDQ	dst_len+8(FP), AX
+	MOVQ	dst_base+0(FP), CX
+	MOVQ	CX, ret_base+32(FP)
+	MOVQ	AX, ret_len+40(FP)
+	MOVQ	dst_cap+16(FP), CX
+	MOVQ	CX, ret_cap+48(FP)
+
+	ADDQ	DX, DI                    // trimmed raw source
+	MOVQ	dst_base+0(FP), SI
+	ADDQ	dst_len+8(FP), SI
+	VMOVDQU	0(DI), Y0
+	VMOVDQU	Y0, 0(SI)
+	MOVQ	32(DI), AX
+	MOVQ	AX, 32(SI)
+	MOVL	40(DI), AX
+	MOVL	AX, 40(SI)
+	VZEROUPPER
+	RET
+
+append32_slow:
+	MOVQ	dst_base+0(FP), AX
+	MOVQ	AX, 0(SP)
+	MOVQ	dst_len+8(FP), AX
+	MOVQ	AX, 8(SP)
+	MOVQ	dst_cap+16(FP), AX
+	MOVQ	AX, 16(SP)
+	MOVQ	src+24(FP), AX
+	MOVQ	AX, 24(SP)
+	CALL	·appendEncode32Slow(SB)
+	MOVQ	32(SP), AX
+	MOVQ	AX, ret_base+32(FP)
+	MOVQ	40(SP), AX
+	MOVQ	AX, ret_len+40(FP)
+	MOVQ	48(SP), AX
+	MOVQ	AX, ret_cap+48(FP)
+	RET
+
+#undef RENDER5
+
+// func encode64DirectAVX2(src *[64]byte, out *byte) int
+//
+// Reuses the specialized 64-byte head and 32-byte tail matmuls, then fuses
+// carry propagation, SIMD rendering, trimming, and direct final stores.
+#define RENDER5PTR \
+	MOVL R8, AX; \
+	MOVQ AX, BX; \
+	SHRQ $1, BX; \
+	IMULQ R13, BX; \
+	MOVQ BX, R9; \
+	SHRQ $42, BX; \
+	MOVL BX, CX; \
+	IMULL R15, CX; \
+	SUBL CX, AX; \
+	LEAQ ·base58Pairs(SB), CX; \
+	MOVWLZX (CX)(AX*2), AX; \
+	MOVW AX, 3(DI); \
+	SHRQ $43, R9; \
+	IMULQ R13, R9; \
+	SHRQ $42, R9; \
+	MOVL R9, AX; \
+	IMULL R15, AX; \
+	SUBL AX, BX; \
+	MOVWLZX (CX)(BX*2), AX; \
+	MOVW AX, 1(DI); \
+	LEAQ ·base58Chars(SB), CX; \
+	MOVBLZX (CX)(R9*1), AX; \
+	MOVB AX, 0(DI)
+
+TEXT ·encode64DirectAVX2(SB), NOSPLIT, $368-24
+	MOVQ	src+0(FP), AX
+	LEAQ	16(SP), R12              // intermediate[18]
+	MOVQ	$0, 0(R12)
+	MOVQ	AX, 0(SP)
+	MOVQ	R12, 8(SP)
+	CALL	·encodeMatMul64HeadAVX2(SB)
+
+	// Midpoint reduction required before adding the low 32-byte half.
+	MOVQ	128(R12), R8             // intermediate[16]
+	MOVQ	$0x68b2c7ad1a016ab5, R11
+	MOVQ	R8, AX
+	MULQ	R11
+	SHRQ	$28, DX
+	MOVQ	$656356768, R10
+	MOVQ	DX, R9
+	IMULQ	R10, R9
+	SUBQ	R9, R8
+	MOVQ	R8, 128(R12)
+	ADDQ	DX, 120(R12)
+
+	LEAQ	160(SP), R14             // tail[9]
+	MOVQ	$0, 0(R14)
+	MOVQ	src+0(FP), AX
+	ADDQ	$32, AX
+	MOVQ	AX, 0(SP)
+	MOVQ	R14, 8(SP)
+	CALL	·encodeMatMul32AVX2(SB)
+	VMOVDQU	80(R12), Y0
+	VPADDQ	8(R14), Y0, Y0
+	VMOVDQU	Y0, 80(R12)
+	VMOVDQU	112(R12), Y1
+	VPADDQ	40(R14), Y1, Y1
+	VMOVDQU	Y1, 112(R12)
+
+	MOVQ	$0x68b2c7ad1a016ab5, R11
+	MOVQ	$656356768, R10
+	MOVQ	$17, SI
+	MOVQ	136(R12), R8
+encode64_carry:
+	MOVQ	R8, AX
+	MULQ	R11
+	SHRQ	$28, DX
+	MOVQ	DX, R9
+	IMULQ	R10, R9
+	SUBQ	R9, R8
+	MOVQ	R8, 0(R12)(SI*8)
+	DECQ	SI
+	MOVQ	DX, R8
+	ADDQ	0(R12)(SI*8), R8
+	TESTQ	SI, SI
+	JNE	encode64_carry
+	MOVQ	R8, 0(R12)
+
+	// The first 16 normalized base-58^5 limbs are independent and render
+	// efficiently in AVX2.  Only the two tail limbs use the scalar pair LUT.
+	LEAQ	232(SP), DI
+	MOVQ	R12, 0(SP)
+	MOVQ	DI, 8(SP)
+	CALL	·digitsToChars16Fast(SB)
+	MOVQ	$0x9bda4125, R13
+	MOVQ	$3364, R15
+	LEAQ	312(SP), DI
+	MOVQ	128(R12), R8
+	RENDER5PTR
+	ADDQ	$5, DI
+	MOVQ	136(R12), R8
+	RENDER5PTR
+
+	LEAQ	232(SP), DI
+	MOVQ	src+0(FP), SI
+	XORQ	CX, CX
+	CMPB	0(SI), $0
+	JEQ	encode64_scan_input
+	// Non-zero first byte implies an 86-88 character result, so only the
+	// first four raw positions can be zero digits.
+	MOVQ	$2, DX
+encode64_common_raw:
+	CMPB	0(DI)(DX*1), $'1'
+	JNE	encode64_raw_done
+	INCQ	DX
+	CMPQ	DX, $5
+	JLT	encode64_common_raw
+	JMP	encode64_raw_done
+
+encode64_scan_input:
+	CMPQ	CX, $64
+	JEQ	encode64_input_done
+	CMPB	0(SI)(CX*1), $0
+	JNE	encode64_input_done
+	INCQ	CX
+	JMP	encode64_scan_input
+encode64_input_done:
+	XORQ	DX, DX
+encode64_scan_raw:
+	CMPQ	DX, $90
+	JEQ	encode64_raw_done
+	CMPB	0(DI)(DX*1), $'1'
+	JNE	encode64_raw_done
+	INCQ	DX
+	JMP	encode64_scan_raw
+encode64_raw_done:
+	SUBQ	CX, DX
+	MOVQ	$90, AX
+	SUBQ	DX, AX
+	MOVQ	AX, ret+16(FP)
+	ADDQ	DX, DI
+	MOVQ	out+8(FP), SI
+	VMOVDQU	0(DI), Y0
+	VMOVDQU	Y0, 0(SI)
+	VMOVDQU	32(DI), Y1
+	VMOVDQU	Y1, 32(SI)
+	VMOVDQU	64(DI), X0
+	VMOVDQU	X0, 64(SI)
+	MOVQ	80(DI), AX
+	MOVQ	AX, 80(SI)
+	VZEROUPPER
+	RET
+
+#undef RENDER5PTR
+
+// func digitsToChars16Fast(v *uint64, out *byte)
+//
+// Converts 16 base-58^5 values to 80 base58 characters.  Unlike the older
+// kernel above, this uses quotients by 58 and 58^2 as a recurrence, cutting
+// the digit-splitting work from four magic divisions plus four remainder
+// multiplies per vector to two shared magic constants and eight multiplies.
+TEXT ·digitsToChars16Fast(SB), NOSPLIT, $0-16
+	MOVQ	v+0(FP), SI
+	MOVQ	out+8(FP), DI
+	VPBROADCASTQ	b58div58<>(SB), Y15   // magic /58
+	VPBROADCASTQ	b58div3364<>(SB), Y14 // magic /3364 after >>2
+	VPBROADCASTQ	b58d1<>(SB), Y13
+
+	// Block 0: elements 0..3.  Y1..Y5 become div1..div4 and the
+	// remainders are packed as five digits per 64-bit input lane.
+	VMOVDQU	0(SI), Y0
+	VPMULUDQ	Y15, Y0, Y1
+	VPSRLQ	$37, Y1, Y1             // div1 = x/58
+	VPSRLQ	$2, Y0, Y2
+	VPMULUDQ	Y14, Y2, Y2
+	VPSRLQ	$40, Y2, Y2             // div2 = x/58^2
+	VPSRLQ	$2, Y1, Y3
+	VPMULUDQ	Y14, Y3, Y3
+	VPSRLQ	$40, Y3, Y3             // div3 = x/58^3
+	VPSRLQ	$2, Y2, Y4
+	VPMULUDQ	Y14, Y4, Y4
+	VPSRLQ	$40, Y4, Y4             // div4 = x/58^4
+	VPMULUDQ	Y13, Y1, Y5
+	VPSUBQ	Y5, Y0, Y0              // rem0
+	VPMULUDQ	Y13, Y2, Y5
+	VPSUBQ	Y5, Y1, Y1              // rem1
+	VPMULUDQ	Y13, Y3, Y5
+	VPSUBQ	Y5, Y2, Y2              // rem2
+	VPMULUDQ	Y13, Y4, Y5
+	VPSUBQ	Y5, Y3, Y3              // rem3; div4 is rem4
+	VPSHUFB	b58shuf0<>(SB), Y4, Y4
+	VPSHUFB	b58shuf1<>(SB), Y3, Y3
+	VPSHUFB	b58shuf2<>(SB), Y2, Y2
+	VPSHUFB	b58shuf3<>(SB), Y1, Y1
+	VPSHUFB	b58shuf4<>(SB), Y0, Y0
+	VPOR	Y3, Y4, Y4
+	VPOR	Y1, Y2, Y2
+	VPOR	Y2, Y4, Y4
+	VPOR	Y0, Y4, Y1
+	VPCMPGTB	b58thr0<>(SB), Y1, Y6
+	VPCMPGTB	b58thr1<>(SB), Y1, Y7
+	VPCMPGTB	b58thr2<>(SB), Y1, Y8
+	VPCMPGTB	b58thr3<>(SB), Y1, Y9
+	VPCMPGTB	b58thr4<>(SB), Y1, Y10
+	VPAND	b58add0<>(SB), Y6, Y6
+	VPAND	b58add3<>(SB), Y9, Y9
+	VPADDB	b58c49<>(SB), Y1, Y2
+	VPADDB	Y6, Y2, Y2
+	VPADDB	Y9, Y2, Y2
+	VPSUBB	Y7, Y2, Y2
+	VPSUBB	Y8, Y2, Y2
+	VPSUBB	Y10, Y2, Y2
+	VMOVDQU	X2, 0(DI)
+	VEXTRACTI128	$1, Y2, X2
+	VMOVDQU	X2, 10(DI)
+
+	// Block 1: elements 4..7.
+	VMOVDQU	32(SI), Y0
+	VPMULUDQ	Y15, Y0, Y1
+	VPSRLQ	$37, Y1, Y1
+	VPSRLQ	$2, Y0, Y2
+	VPMULUDQ	Y14, Y2, Y2
+	VPSRLQ	$40, Y2, Y2
+	VPSRLQ	$2, Y1, Y3
+	VPMULUDQ	Y14, Y3, Y3
+	VPSRLQ	$40, Y3, Y3
+	VPSRLQ	$2, Y2, Y4
+	VPMULUDQ	Y14, Y4, Y4
+	VPSRLQ	$40, Y4, Y4
+	VPMULUDQ	Y13, Y1, Y5
+	VPSUBQ	Y5, Y0, Y0
+	VPMULUDQ	Y13, Y2, Y5
+	VPSUBQ	Y5, Y1, Y1
+	VPMULUDQ	Y13, Y3, Y5
+	VPSUBQ	Y5, Y2, Y2
+	VPMULUDQ	Y13, Y4, Y5
+	VPSUBQ	Y5, Y3, Y3
+	VPSHUFB	b58shuf0<>(SB), Y4, Y4
+	VPSHUFB	b58shuf1<>(SB), Y3, Y3
+	VPSHUFB	b58shuf2<>(SB), Y2, Y2
+	VPSHUFB	b58shuf3<>(SB), Y1, Y1
+	VPSHUFB	b58shuf4<>(SB), Y0, Y0
+	VPOR	Y3, Y4, Y4
+	VPOR	Y1, Y2, Y2
+	VPOR	Y2, Y4, Y4
+	VPOR	Y0, Y4, Y1
+	VPCMPGTB	b58thr0<>(SB), Y1, Y6
+	VPCMPGTB	b58thr1<>(SB), Y1, Y7
+	VPCMPGTB	b58thr2<>(SB), Y1, Y8
+	VPCMPGTB	b58thr3<>(SB), Y1, Y9
+	VPCMPGTB	b58thr4<>(SB), Y1, Y10
+	VPAND	b58add0<>(SB), Y6, Y6
+	VPAND	b58add3<>(SB), Y9, Y9
+	VPADDB	b58c49<>(SB), Y1, Y2
+	VPADDB	Y6, Y2, Y2
+	VPADDB	Y9, Y2, Y2
+	VPSUBB	Y7, Y2, Y2
+	VPSUBB	Y8, Y2, Y2
+	VPSUBB	Y10, Y2, Y2
+	VMOVDQU	X2, 20(DI)
+	VEXTRACTI128	$1, Y2, X2
+	VMOVDQU	X2, 30(DI)
+
+	// Block 2: elements 8..11 (the caller zero-pads elements 9..11).
+	VMOVDQU	64(SI), Y0
+	VPMULUDQ	Y15, Y0, Y1
+	VPSRLQ	$37, Y1, Y1
+	VPSRLQ	$2, Y0, Y2
+	VPMULUDQ	Y14, Y2, Y2
+	VPSRLQ	$40, Y2, Y2
+	VPSRLQ	$2, Y1, Y3
+	VPMULUDQ	Y14, Y3, Y3
+	VPSRLQ	$40, Y3, Y3
+	VPSRLQ	$2, Y2, Y4
+	VPMULUDQ	Y14, Y4, Y4
+	VPSRLQ	$40, Y4, Y4
+	VPMULUDQ	Y13, Y1, Y5
+	VPSUBQ	Y5, Y0, Y0
+	VPMULUDQ	Y13, Y2, Y5
+	VPSUBQ	Y5, Y1, Y1
+	VPMULUDQ	Y13, Y3, Y5
+	VPSUBQ	Y5, Y2, Y2
+	VPMULUDQ	Y13, Y4, Y5
+	VPSUBQ	Y5, Y3, Y3
+	VPSHUFB	b58shuf0<>(SB), Y4, Y4
+	VPSHUFB	b58shuf1<>(SB), Y3, Y3
+	VPSHUFB	b58shuf2<>(SB), Y2, Y2
+	VPSHUFB	b58shuf3<>(SB), Y1, Y1
+	VPSHUFB	b58shuf4<>(SB), Y0, Y0
+	VPOR	Y3, Y4, Y4
+	VPOR	Y1, Y2, Y2
+	VPOR	Y2, Y4, Y4
+	VPOR	Y0, Y4, Y1
+	VPCMPGTB	b58thr0<>(SB), Y1, Y6
+	VPCMPGTB	b58thr1<>(SB), Y1, Y7
+	VPCMPGTB	b58thr2<>(SB), Y1, Y8
+	VPCMPGTB	b58thr3<>(SB), Y1, Y9
+	VPCMPGTB	b58thr4<>(SB), Y1, Y10
+	VPAND	b58add0<>(SB), Y6, Y6
+	VPAND	b58add3<>(SB), Y9, Y9
+	VPADDB	b58c49<>(SB), Y1, Y2
+	VPADDB	Y6, Y2, Y2
+	VPADDB	Y9, Y2, Y2
+	VPSUBB	Y7, Y2, Y2
+	VPSUBB	Y8, Y2, Y2
+	VPSUBB	Y10, Y2, Y2
+	VMOVDQU	X2, 40(DI)
+	VEXTRACTI128	$1, Y2, X2
+	VMOVDQU	X2, 50(DI)
+
+	// Block 3: elements 12..15.
+	VMOVDQU	96(SI), Y0
+	VPMULUDQ	Y15, Y0, Y1
+	VPSRLQ	$37, Y1, Y1
+	VPSRLQ	$2, Y0, Y2
+	VPMULUDQ	Y14, Y2, Y2
+	VPSRLQ	$40, Y2, Y2
+	VPSRLQ	$2, Y1, Y3
+	VPMULUDQ	Y14, Y3, Y3
+	VPSRLQ	$40, Y3, Y3
+	VPSRLQ	$2, Y2, Y4
+	VPMULUDQ	Y14, Y4, Y4
+	VPSRLQ	$40, Y4, Y4
+	VPMULUDQ	Y13, Y1, Y5
+	VPSUBQ	Y5, Y0, Y0
+	VPMULUDQ	Y13, Y2, Y5
+	VPSUBQ	Y5, Y1, Y1
+	VPMULUDQ	Y13, Y3, Y5
+	VPSUBQ	Y5, Y2, Y2
+	VPMULUDQ	Y13, Y4, Y5
+	VPSUBQ	Y5, Y3, Y3
+	VPSHUFB	b58shuf0<>(SB), Y4, Y4
+	VPSHUFB	b58shuf1<>(SB), Y3, Y3
+	VPSHUFB	b58shuf2<>(SB), Y2, Y2
+	VPSHUFB	b58shuf3<>(SB), Y1, Y1
+	VPSHUFB	b58shuf4<>(SB), Y0, Y0
+	VPOR	Y3, Y4, Y4
+	VPOR	Y1, Y2, Y2
+	VPOR	Y2, Y4, Y4
+	VPOR	Y0, Y4, Y1
+	VPCMPGTB	b58thr0<>(SB), Y1, Y6
+	VPCMPGTB	b58thr1<>(SB), Y1, Y7
+	VPCMPGTB	b58thr2<>(SB), Y1, Y8
+	VPCMPGTB	b58thr3<>(SB), Y1, Y9
+	VPCMPGTB	b58thr4<>(SB), Y1, Y10
+	VPAND	b58add0<>(SB), Y6, Y6
+	VPAND	b58add3<>(SB), Y9, Y9
+	VPADDB	b58c49<>(SB), Y1, Y2
+	VPADDB	Y6, Y2, Y2
+	VPADDB	Y9, Y2, Y2
+	VPSUBB	Y7, Y2, Y2
+	VPSUBB	Y8, Y2, Y2
+	VPSUBB	Y10, Y2, Y2
+	VMOVDQU	X2, 60(DI)
+	VEXTRACTI128	$1, Y2, X2
+	VMOVDQU	X2, 70(DI)
 
 	VZEROUPPER
 	RET
