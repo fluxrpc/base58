@@ -245,6 +245,9 @@ func AppendEncode(dst []byte, src []byte) []byte {
 // Allocates exactly one []byte of the encoded length. For zero-allocation
 // hot paths, prefer AppendEncode32 which writes into a caller-owned buffer.
 func Encode32(src *[32]byte) string {
+	if out, ok := encode32Fast(src); ok {
+		return unsafe.String(unsafe.SliceData(out), len(out))
+	}
 	var raw [raw58Buf32]byte
 	outLen, skip := encode32Render(src, &raw)
 	out := make([]byte, outLen)
@@ -255,11 +258,8 @@ func Encode32(src *[32]byte) string {
 	return unsafe.String(unsafe.SliceData(out), len(out))
 }
 
-// Encode64 encodes a 64-byte array to a base58 string.
-//
-// Allocates exactly one []byte of the encoded length. For zero-allocation
-// hot paths, prefer AppendEncode64.
-func Encode64(src *[64]byte) string {
+// encode64Generic is the portable allocating Encode64 implementation.
+func encode64Generic(src *[64]byte) string {
 	var intermediate [intermediateSz64]uint64
 	outLen, iz, dc, inZeros := encode64Parts(src, &intermediate)
 	out := make([]byte, outLen)
@@ -267,9 +267,9 @@ func Encode64(src *[64]byte) string {
 	return unsafe.String(unsafe.SliceData(out), len(out))
 }
 
-// AppendEncode32 appends the base58 encoding of src to dst and returns the
-// extended buffer. It allocates only if dst has insufficient capacity.
-func AppendEncode32(dst []byte, src *[32]byte) []byte {
+// appendEncode32Generic is the portable AppendEncode32 implementation.  The
+// architecture wrappers select it directly or use it as their scalar fallback.
+func appendEncode32Generic(dst []byte, src *[32]byte) []byte {
 	var raw [raw58Buf32]byte
 	outLen, skip := encode32Render(src, &raw)
 	total := len(dst) + outLen
@@ -291,6 +291,9 @@ func AppendEncode32(dst []byte, src *[32]byte) []byte {
 // AppendEncode64 appends the base58 encoding of src to dst and returns the
 // extended buffer. It allocates only if dst has insufficient capacity.
 func AppendEncode64(dst []byte, src *[64]byte) []byte {
+	if out, ok := appendEncode64Fast(dst, src); ok {
+		return out
+	}
 	var intermediate [intermediateSz64]uint64
 	outLen, iz, dc, inZeros := encode64Parts(src, &intermediate)
 	total := len(dst) + outLen
