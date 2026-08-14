@@ -7,6 +7,14 @@ package base58
 // fallback are handled by appendEncode32Slow.
 func AppendEncode32(dst []byte, src *[32]byte) []byte
 
+func encode32Fast(src *[32]byte) ([]byte, bool) {
+	if !useAVX2 {
+		return nil, false
+	}
+	out := make([]byte, 0, EncodedMaxLen32)
+	return AppendEncode32(out, src), true
+}
+
 func appendEncode32Slow(dst []byte, src *[32]byte) []byte {
 	if !useAVX2 {
 		return appendEncode32Generic(dst, src)

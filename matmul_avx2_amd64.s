@@ -731,6 +731,7 @@ direct_raw_done:
 	SUBQ	CX, DX                    // skip = rawZeros - inZeros
 	MOVQ	$45, AX
 	SUBQ	DX, AX                    // output length
+	MOVQ	AX, R14
 	ADDQ	dst_len+8(FP), AX
 	MOVQ	dst_base+0(FP), CX
 	MOVQ	CX, ret_base+32(FP)
@@ -743,10 +744,8 @@ direct_raw_done:
 	ADDQ	dst_len+8(FP), SI
 	VMOVDQU	0(DI), Y0
 	VMOVDQU	Y0, 0(SI)
-	MOVQ	32(DI), AX
-	MOVQ	AX, 32(SI)
-	MOVL	40(DI), AX
-	MOVL	AX, 40(SI)
+	VMOVDQU	-16(DI)(R14*1), X0
+	VMOVDQU	X0, -16(SI)(R14*1)
 	VZEROUPPER
 	RET
 
@@ -799,13 +798,110 @@ append32_slow:
 	MOVBLZX (CX)(R9*1), AX; \
 	MOVB AX, 0(DI)
 
-TEXT ·encode64DirectAVX2(SB), NOSPLIT, $368-24
-	MOVQ	src+0(FP), AX
+TEXT ·encode64DirectAVX2(SB), NOSPLIT, $272-24
+	MOVQ	src+0(FP), SI
 	LEAQ	16(SP), R12              // intermediate[18]
 	MOVQ	$0, 0(R12)
-	MOVQ	AX, 0(SP)
-	MOVQ	R12, 8(SP)
-	CALL	·encodeMatMul64HeadAVX2(SB)
+	LEAQ	·encWide64(SB), DX
+	VPXOR	Y0, Y0, Y0
+	VPXOR	Y1, Y1, Y1
+	VPXOR	Y2, Y2, Y2
+	VPXOR	Y3, Y3, Y3
+	VPXOR	Y4, Y4, Y4
+	VMOVDQU	bswapd<>(SB), Y7
+
+	VPBROADCASTD	0(SI), Y5
+	VPSHUFB	Y7, Y5, Y5
+	VPMULUDQ	0(DX), Y5, Y6
+	VPADDQ	Y6, Y0, Y0
+	VPMULUDQ	32(DX), Y5, Y6
+	VPADDQ	Y6, Y1, Y1
+	VPMULUDQ	64(DX), Y5, Y6
+	VPADDQ	Y6, Y2, Y2
+	VPMULUDQ	96(DX), Y5, Y6
+	VPADDQ	Y6, Y3, Y3
+	VPMULUDQ	128(DX), Y5, Y6
+	VPADDQ	Y6, Y4, Y4
+	VPBROADCASTD	4(SI), Y5
+	VPSHUFB	Y7, Y5, Y5
+	VPMULUDQ	160(DX), Y5, Y6
+	VPADDQ	Y6, Y0, Y0
+	VPMULUDQ	192(DX), Y5, Y6
+	VPADDQ	Y6, Y1, Y1
+	VPMULUDQ	224(DX), Y5, Y6
+	VPADDQ	Y6, Y2, Y2
+	VPMULUDQ	256(DX), Y5, Y6
+	VPADDQ	Y6, Y3, Y3
+	VPMULUDQ	288(DX), Y5, Y6
+	VPADDQ	Y6, Y4, Y4
+	VPBROADCASTD	8(SI), Y5
+	VPSHUFB	Y7, Y5, Y5
+	VPMULUDQ	320(DX), Y5, Y6
+	VPADDQ	Y6, Y0, Y0
+	VPMULUDQ	352(DX), Y5, Y6
+	VPADDQ	Y6, Y1, Y1
+	VPMULUDQ	384(DX), Y5, Y6
+	VPADDQ	Y6, Y2, Y2
+	VPMULUDQ	416(DX), Y5, Y6
+	VPADDQ	Y6, Y3, Y3
+	VPMULUDQ	448(DX), Y5, Y6
+	VPADDQ	Y6, Y4, Y4
+	VPBROADCASTD	12(SI), Y5
+	VPSHUFB	Y7, Y5, Y5
+	VPMULUDQ	480(DX), Y5, Y6
+	VPADDQ	Y6, Y0, Y0
+	VPMULUDQ	512(DX), Y5, Y6
+	VPADDQ	Y6, Y1, Y1
+	VPMULUDQ	544(DX), Y5, Y6
+	VPADDQ	Y6, Y2, Y2
+	VPMULUDQ	576(DX), Y5, Y6
+	VPADDQ	Y6, Y3, Y3
+	VPMULUDQ	608(DX), Y5, Y6
+	VPADDQ	Y6, Y4, Y4
+	VPBROADCASTD	16(SI), Y5
+	VPSHUFB	Y7, Y5, Y5
+	VPMULUDQ	672(DX), Y5, Y6
+	VPADDQ	Y6, Y1, Y1
+	VPMULUDQ	704(DX), Y5, Y6
+	VPADDQ	Y6, Y2, Y2
+	VPMULUDQ	736(DX), Y5, Y6
+	VPADDQ	Y6, Y3, Y3
+	VPMULUDQ	768(DX), Y5, Y6
+	VPADDQ	Y6, Y4, Y4
+	VPBROADCASTD	20(SI), Y5
+	VPSHUFB	Y7, Y5, Y5
+	VPMULUDQ	832(DX), Y5, Y6
+	VPADDQ	Y6, Y1, Y1
+	VPMULUDQ	864(DX), Y5, Y6
+	VPADDQ	Y6, Y2, Y2
+	VPMULUDQ	896(DX), Y5, Y6
+	VPADDQ	Y6, Y3, Y3
+	VPMULUDQ	928(DX), Y5, Y6
+	VPADDQ	Y6, Y4, Y4
+	VPBROADCASTD	24(SI), Y5
+	VPSHUFB	Y7, Y5, Y5
+	VPMULUDQ	992(DX), Y5, Y6
+	VPADDQ	Y6, Y1, Y1
+	VPMULUDQ	1024(DX), Y5, Y6
+	VPADDQ	Y6, Y2, Y2
+	VPMULUDQ	1056(DX), Y5, Y6
+	VPADDQ	Y6, Y3, Y3
+	VPMULUDQ	1088(DX), Y5, Y6
+	VPADDQ	Y6, Y4, Y4
+	VPBROADCASTD	28(SI), Y5
+	VPSHUFB	Y7, Y5, Y5
+	VPMULUDQ	1184(DX), Y5, Y6
+	VPADDQ	Y6, Y2, Y2
+	VPMULUDQ	1216(DX), Y5, Y6
+	VPADDQ	Y6, Y3, Y3
+	VPMULUDQ	1248(DX), Y5, Y6
+	VPADDQ	Y6, Y4, Y4
+	VMOVDQU	Y0, 8(R12)
+	VMOVDQU	Y1, 40(R12)
+	VMOVDQU	Y2, 72(R12)
+	VMOVDQU	Y3, 104(R12)
+	VMOVQ	X4, AX
+	MOVQ	AX, 136(R12)
 
 	// Midpoint reduction required before adding the low 32-byte half.
 	MOVQ	128(R12), R8             // intermediate[16]
@@ -822,11 +918,54 @@ TEXT ·encode64DirectAVX2(SB), NOSPLIT, $368-24
 
 	LEAQ	160(SP), R14             // tail[9]
 	MOVQ	$0, 0(R14)
-	MOVQ	src+0(FP), AX
-	ADDQ	$32, AX
-	MOVQ	AX, 0(SP)
-	MOVQ	R14, 8(SP)
-	CALL	·encodeMatMul32AVX2(SB)
+	MOVQ	src+0(FP), SI
+	ADDQ	$32, SI
+	LEAQ	·encWide32(SB), DX
+	VPXOR	Y0, Y0, Y0
+	VPXOR	Y1, Y1, Y1
+	VMOVDQU	bswapd<>(SB), Y7
+	VPBROADCASTD	0(SI), Y2
+	VPSHUFB	Y7, Y2, Y2
+	VPMULUDQ	0(DX), Y2, Y3
+	VPADDQ	Y3, Y0, Y0
+	VPMULUDQ	32(DX), Y2, Y3
+	VPADDQ	Y3, Y1, Y1
+	VPBROADCASTD	4(SI), Y2
+	VPSHUFB	Y7, Y2, Y2
+	VPMULUDQ	64(DX), Y2, Y3
+	VPADDQ	Y3, Y0, Y0
+	VPMULUDQ	96(DX), Y2, Y3
+	VPADDQ	Y3, Y1, Y1
+	VPBROADCASTD	8(SI), Y2
+	VPSHUFB	Y7, Y2, Y2
+	VPMULUDQ	128(DX), Y2, Y3
+	VPADDQ	Y3, Y0, Y0
+	VPMULUDQ	160(DX), Y2, Y3
+	VPADDQ	Y3, Y1, Y1
+	VPBROADCASTD	12(SI), Y2
+	VPSHUFB	Y7, Y2, Y2
+	VPMULUDQ	192(DX), Y2, Y3
+	VPADDQ	Y3, Y0, Y0
+	VPMULUDQ	224(DX), Y2, Y3
+	VPADDQ	Y3, Y1, Y1
+	VPBROADCASTD	16(SI), Y2
+	VPSHUFB	Y7, Y2, Y2
+	VPMULUDQ	288(DX), Y2, Y3
+	VPADDQ	Y3, Y1, Y1
+	VPBROADCASTD	20(SI), Y2
+	VPSHUFB	Y7, Y2, Y2
+	VPMULUDQ	352(DX), Y2, Y3
+	VPADDQ	Y3, Y1, Y1
+	VPBROADCASTD	24(SI), Y2
+	VPSHUFB	Y7, Y2, Y2
+	VPMULUDQ	416(DX), Y2, Y3
+	VPADDQ	Y3, Y1, Y1
+	VPBROADCASTD	28(SI), Y2
+	VPSHUFB	Y7, Y2, Y2
+	VPMULUDQ	480(DX), Y2, Y3
+	VPADDQ	Y3, Y1, Y1
+	VMOVDQU	Y0, 8(R14)
+	VMOVDQU	Y1, 40(R14)
 	VMOVDQU	80(R12), Y0
 	VPADDQ	8(R14), Y0, Y0
 	VMOVDQU	Y0, 80(R12)
@@ -855,20 +994,19 @@ encode64_carry:
 
 	// The first 16 normalized base-58^5 limbs are independent and render
 	// efficiently in AVX2.  Only the two tail limbs use the scalar pair LUT.
-	LEAQ	232(SP), DI
-	MOVQ	R12, 0(SP)
-	MOVQ	DI, 8(SP)
-	CALL	·digitsToChars16Fast(SB)
+	MOVQ	R12, SI
+	LEAQ	160(SP), DI
+	CALL	·digitsToChars16FastRegs(SB)
 	MOVQ	$0x9bda4125, R13
 	MOVQ	$3364, R15
-	LEAQ	312(SP), DI
+	LEAQ	240(SP), DI
 	MOVQ	128(R12), R8
 	RENDER5PTR
 	ADDQ	$5, DI
 	MOVQ	136(R12), R8
 	RENDER5PTR
 
-	LEAQ	232(SP), DI
+	LEAQ	160(SP), DI
 	MOVQ	src+0(FP), SI
 	XORQ	CX, CX
 	CMPB	0(SI), $0
@@ -905,16 +1043,15 @@ encode64_raw_done:
 	MOVQ	$90, AX
 	SUBQ	DX, AX
 	MOVQ	AX, ret+16(FP)
+	MOVQ	AX, R14
 	ADDQ	DX, DI
 	MOVQ	out+8(FP), SI
 	VMOVDQU	0(DI), Y0
 	VMOVDQU	Y0, 0(SI)
 	VMOVDQU	32(DI), Y1
 	VMOVDQU	Y1, 32(SI)
-	VMOVDQU	64(DI), X0
-	VMOVDQU	X0, 64(SI)
-	MOVQ	80(DI), AX
-	MOVQ	AX, 80(SI)
+	VMOVDQU	-32(DI)(R14*1), Y2
+	VMOVDQU	Y2, -32(SI)(R14*1)
 	VZEROUPPER
 	RET
 
@@ -929,6 +1066,13 @@ encode64_raw_done:
 TEXT ·digitsToChars16Fast(SB), NOSPLIT, $0-16
 	MOVQ	v+0(FP), SI
 	MOVQ	out+8(FP), DI
+	CALL	·digitsToChars16FastRegs(SB)
+	VZEROUPPER
+	RET
+
+// Register-ABI renderer used inside the fused 64-byte encoder.  SI and DI
+// carry the input and output pointers; the caller retains AVX state.
+TEXT ·digitsToChars16FastRegs(SB), NOSPLIT, $0-0
 	VPBROADCASTQ	b58div58<>(SB), Y15   // magic /58
 	VPBROADCASTQ	b58div3364<>(SB), Y14 // magic /3364 after >>2
 	VPBROADCASTQ	b58d1<>(SB), Y13
@@ -1122,7 +1266,6 @@ TEXT ·digitsToChars16Fast(SB), NOSPLIT, $0-16
 	VEXTRACTI128	$1, Y2, X2
 	VMOVDQU	X2, 70(DI)
 
-	VZEROUPPER
 	RET
 
 // func digitsToChars16(v *uint64, out *byte)
@@ -1938,3 +2081,102 @@ TEXT ·decodeMatMul64AVX2(SB), NOSPLIT, $0-16
 	VMOVDQU	Y3, 96(DI)
 	VZEROUPPER
 	RET
+
+// STORE32 emits the low 32 bits of R8 in big-endian order, then carries its
+// high 32 bits into the preceding matrix word at BINOFF(SP).
+#define STORE32(BINOFF, OUTOFF) \
+	MOVL R8, AX; \
+	BSWAPL AX; \
+	MOVL AX, OUTOFF(DI); \
+	SHRQ $32, R8; \
+	ADDQ BINOFF(SP), R8
+
+// func decode32Write(intermediate *[9]uint64, dst *[32]byte) bool
+//
+// On AVX2, keep matrix multiply, base-2^32 normalization, endian conversion,
+// and final stores within one assembly call.  The scalar path retains the Go
+// implementation so non-AVX2 machines remain supported.
+TEXT ·decode32Write(SB), NOSPLIT, $96-17
+	CMPB	·useAVX2(SB), $0
+	JEQ	decode32_write_slow
+	MOVQ	intermediate+0(FP), AX
+	MOVQ	AX, 0(SP)
+	LEAQ	16(SP), AX
+	MOVQ	AX, 8(SP)
+	CALL	·decodeMatMul32AVX2(SB)
+	MOVQ	dst+8(FP), DI
+	MOVQ	72(SP), R8
+	STORE32(64, 28)
+	STORE32(56, 24)
+	STORE32(48, 20)
+	STORE32(40, 16)
+	STORE32(32, 12)
+	STORE32(24, 8)
+	STORE32(16, 4)
+	MOVL	R8, AX
+	BSWAPL	AX
+	MOVL	AX, 0(DI)
+	SHRQ	$32, R8
+	JNE	decode32_write_overflow
+	MOVB	$1, ret+16(FP)
+	RET
+decode32_write_overflow:
+	MOVB	$0, ret+16(FP)
+	RET
+decode32_write_slow:
+	MOVQ	intermediate+0(FP), AX
+	MOVQ	AX, 0(SP)
+	MOVQ	dst+8(FP), AX
+	MOVQ	AX, 8(SP)
+	CALL	·decode32WriteSlow(SB)
+	MOVBLZX	16(SP), AX
+	MOVB	AL, ret+16(FP)
+	RET
+
+// func decode64Write(intermediate *[18]uint64, dst *[64]byte) bool
+TEXT ·decode64Write(SB), NOSPLIT, $160-17
+	CMPB	·useAVX2(SB), $0
+	JEQ	decode64_write_slow
+	MOVQ	intermediate+0(FP), AX
+	MOVQ	AX, 0(SP)
+	LEAQ	16(SP), AX
+	MOVQ	AX, 8(SP)
+	CALL	·decodeMatMul64AVX2(SB)
+	MOVQ	dst+8(FP), DI
+	MOVQ	136(SP), R8
+	STORE32(128, 60)
+	STORE32(120, 56)
+	STORE32(112, 52)
+	STORE32(104, 48)
+	STORE32(96, 44)
+	STORE32(88, 40)
+	STORE32(80, 36)
+	STORE32(72, 32)
+	STORE32(64, 28)
+	STORE32(56, 24)
+	STORE32(48, 20)
+	STORE32(40, 16)
+	STORE32(32, 12)
+	STORE32(24, 8)
+	STORE32(16, 4)
+	MOVL	R8, AX
+	BSWAPL	AX
+	MOVL	AX, 0(DI)
+	SHRQ	$32, R8
+	JNE	decode64_write_overflow
+	MOVB	$1, ret+16(FP)
+	RET
+decode64_write_overflow:
+	MOVB	$0, ret+16(FP)
+	RET
+decode64_write_slow:
+	MOVQ	intermediate+0(FP), AX
+	MOVQ	AX, 0(SP)
+	MOVQ	dst+8(FP), AX
+	MOVQ	AX, 8(SP)
+	CALL	·decode64WriteSlow(SB)
+	MOVBLZX	16(SP), AX
+	MOVB	AL, ret+16(FP)
+	RET
+
+#undef STORE32

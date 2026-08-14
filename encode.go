@@ -245,6 +245,9 @@ func AppendEncode(dst []byte, src []byte) []byte {
 // Allocates exactly one []byte of the encoded length. For zero-allocation
 // hot paths, prefer AppendEncode32 which writes into a caller-owned buffer.
 func Encode32(src *[32]byte) string {
+	if out, ok := encode32Fast(src); ok {
+		return unsafe.String(unsafe.SliceData(out), len(out))
+	}
 	var raw [raw58Buf32]byte
 	outLen, skip := encode32Render(src, &raw)
 	out := make([]byte, outLen)
@@ -255,11 +258,8 @@ func Encode32(src *[32]byte) string {
 	return unsafe.String(unsafe.SliceData(out), len(out))
 }
 
-// Encode64 encodes a 64-byte array to a base58 string.
-//
-// Allocates exactly one []byte of the encoded length. For zero-allocation
-// hot paths, prefer AppendEncode64.
-func Encode64(src *[64]byte) string {
+// encode64Generic is the portable allocating Encode64 implementation.
+func encode64Generic(src *[64]byte) string {
 	var intermediate [intermediateSz64]uint64
 	outLen, iz, dc, inZeros := encode64Parts(src, &intermediate)
 	out := make([]byte, outLen)

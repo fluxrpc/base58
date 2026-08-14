@@ -154,6 +154,27 @@ func TestAppendEncode32_ZeroAlloc(t *testing.T) {
 	assert.Equal(t, "pubkey="+expected, string(buf2))
 }
 
+func TestAppendEncode32_DoesNotWritePastLength(t *testing.T) {
+	var random [32]byte
+	rand.Read(random[:])
+	inputs := [][32]byte{
+		{},
+		{31: 1},
+		random,
+	}
+
+	const prefixLen = 7
+	for _, src := range inputs {
+		backing := bytes.Repeat([]byte{0xa5}, prefixLen+EncodedMaxLen32+16)
+		dst := backing[:prefixLen]
+		got := AppendEncode32(dst, &src)
+		assert.Equal(t, Encode32(&src), string(got[prefixLen:]))
+		for i, b := range backing[len(got):] {
+			assert.Equalf(t, byte(0xa5), b, "write past returned length at byte %d", len(got)+i)
+		}
+	}
+}
+
 func TestAppendEncode64_ZeroAlloc(t *testing.T) {
 	var src [64]byte
 	rand.Read(src[:])
@@ -162,6 +183,27 @@ func TestAppendEncode64_ZeroAlloc(t *testing.T) {
 	buf := make([]byte, 0, EncodedMaxLen64)
 	buf = AppendEncode64(buf, &src)
 	assert.Equal(t, expected, string(buf))
+}
+
+func TestAppendEncode64_DoesNotWritePastLength(t *testing.T) {
+	var random [64]byte
+	rand.Read(random[:])
+	inputs := [][64]byte{
+		{},
+		{63: 1},
+		random,
+	}
+
+	const prefixLen = 7
+	for _, src := range inputs {
+		backing := bytes.Repeat([]byte{0xa5}, prefixLen+EncodedMaxLen64+16)
+		dst := backing[:prefixLen]
+		got := AppendEncode64(dst, &src)
+		assert.Equal(t, Encode64(&src), string(got[prefixLen:]))
+		for i, b := range backing[len(got):] {
+			assert.Equalf(t, byte(0xa5), b, "write past returned length at byte %d", len(got)+i)
+		}
+	}
 }
 
 func TestAppendEncode_MatchesEncode(t *testing.T) {

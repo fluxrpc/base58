@@ -21,6 +21,12 @@ func digitsToChars8(v *uint64, out *byte)
 //go:noescape
 func digitsToChars16Fast(v *uint64, out *byte)
 
+// digitsToChars16FastRegs is an assembly-internal register-ABI entry point.
+// It is declared solely so assembly vet can validate the symbol.
+//
+//go:noescape
+func digitsToChars16FastRegs()
+
 //go:noescape
 func digitsToChars16(v *uint64, out *byte)
 
