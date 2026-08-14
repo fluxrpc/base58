@@ -59,43 +59,46 @@ for _, pk := range pubkeys {
 
 ### Comparisons
 
-Same machine (Go 1.26, i7-9700K,
-AVX2, single core), same inputs, both sides measured through the generic
-`Encode([]byte)`/`Decode(string)` entry points; averages of 5 runs.
+Same machine (Go 1.26.1, Intel i7-9700K under WSL2, AVX2, one pinned CPU,
+`GOMAXPROCS=1`), same 4,096 deterministic inputs per size, and both sides
+measured in the same benchmark binary through the generic
+`Encode([]byte)`/`Decode(string)` entry points. Results are medians of five
+1-second runs, comparing `fluxrpc/base58` main at `1c233aac` with the current
+`solana-foundation/solana-go` main at `2716b505`.
 
-| Operation | solana-foundation/solana-go | cloakd/base58   | speedup |
-|---|---|-----------------|---|
-| Encode 32B (pubkey) | 364 ns, 2 allocs | 68 ns, 1 alloc  | **5.3x** |
-| Decode 32B | 142 ns, 2 allocs | 60 ns, 1 alloc  | **2.4x** |
-| Encode 64B (signature) | 1,116 ns, 2 allocs | 153 ns, 1 alloc | **7.3x** |
-| Decode 64B | 296 ns, 3 allocs | 128 ns, 1 alloc | **2.3x** |
-| Encode 16B | 134 ns | 100 ns          | 1.3x |
-| Decode 16B | 85 ns | 46 ns           | 1.8x |
-| Encode 100B | 2,378 ns, 5 allocs | 541 ns, 1 alloc | **4.4x** |
-| Decode 100B | 385 ns, 3 allocs | 240 ns, 1 alloc | **1.6x** |
-| Encode 1000B | 187,427 ns | 34,600 ns       | **5.4x** |
-| Decode 1000B | 11,443 ns | 11,920 ns       | 1.0x |
+| Operation | solana-foundation/solana-go | fluxrpc/base58 | Speedup |
+|---|---:|---:|---:|
+| Encode 16B | 311 ns, 1 alloc | 91.6 ns, 1 alloc | **3.40x** |
+| Decode 16B | 277 ns, 1 alloc | 63.2 ns, 1 alloc | **4.38x** |
+| Encode 32B (pubkey) | 125 ns, 1 alloc | 65.2 ns, 1 alloc | **1.92x** |
+| Decode 32B | 111 ns, 1 alloc | 63.8 ns, 1 alloc | **1.75x** |
+| Encode 64B (signature) | 474 ns, 1 alloc | 121 ns, 1 alloc | **3.91x** |
+| Decode 64B | 392 ns, 1 alloc | 112 ns, 1 alloc | **3.50x** |
+| Encode 100B | 8,738 ns, 3 allocs | 578 ns, 1 alloc | **15.13x** |
+| Decode 100B | 7,960 ns, 2 allocs | 312 ns, 1 alloc | **25.49x** |
+| Encode 1000B | 845,012 ns, 3 allocs | 35,911 ns, 2 allocs | **23.53x** |
+| Decode 1000B | 718,747 ns, 2 allocs | 10,640 ns, 2 allocs | **67.55x** |
 
 The typed entry points are faster still (no dispatch, no output-slice copy,
 zero allocations for decode/append):
 
 | Operation | ns/op | allocs/op |
 |---|---|---|
-| Encode32 (pubkey) | ~63 | 1 |
-| EncodeCached32 (repeated key) | ~5.7 | 0 |
-| EncodeCached32 (Zipf key mix) | ~15 | ~0 |
-| AppendEncode32 | ~41 | 0 |
-| Encode32Batch (per key) | ~48 | 2 per batch |
-| Decode32 | ~34 | 0 |
-| Encode64 (signature) | ~127 | 1 |
-| AppendEncode64 | ~101 | 0 |
-| Encode64Batch (per key) | ~100 | 2 per batch |
-| Decode64 | ~68 | 0 |
+| Encode32 (pubkey) | ~57.2 | 1 |
+| EncodeCached32 (repeated key) | ~5.40 | 0 |
+| EncodeCached32 (Zipf key mix) | ~14.7 | 0 |
+| AppendEncode32 | ~32.9 | 0 |
+| Encode32Batch (per key) | ~50.5 | 2 per batch |
+| Decode32 | ~30.2 | 0 |
+| Encode64 (signature) | ~107.6 | 1 |
+| AppendEncode64 | ~73.8 | 0 |
+| Encode64Batch (per key) | ~100.2 | 2 per batch |
+| Decode64 | ~59.9 | 0 |
 
 The comparison benchmark is not checked in (keeping the module
-dependency-free); to reproduce, add `solana-go/base58` as a test dependency
-and benchmark `base58.Encode`/`Decode` against `Encode`/`Decode` on the
-same inputs.
+dependency-free). To reproduce it, benchmark against the current
+`solana-foundation/solana-go/base58` checkout in a temporary module, using
+the same input corpus for both implementations.
 
 Correctness is cross-validated against Bitcoin Core / bs58 / fd_base58 /
 five8 test vectors, randomized round-trips against the independent
