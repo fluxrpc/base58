@@ -278,6 +278,7 @@ func Decode32(encoded string, dst *[32]byte) error {
 	// the left-padded digit groups; the head group takes the remainder.
 	var intermediate [intermediateSz32]uint64
 	var bad byte
+	var pairBad uint16
 	i := 0
 	head := encLen % 5
 	if head == 0 {
@@ -292,42 +293,21 @@ func Decode32(encoded string, dst *[32]byte) error {
 	intermediate[intermediateSz32-(encLen+4)/5] = uint64(g)
 	for gi := intermediateSz32 - (encLen+4)/5 + 1; gi < intermediateSz32; gi++ {
 		c := encoded[i : i+5] // one bounds check per group instead of five
-		d0 := base58InverseFull[c[0]]
-		d1 := base58InverseFull[c[1]]
-		d2 := base58InverseFull[c[2]]
-		d3 := base58InverseFull[c[3]]
+		p0 := base58InversePairs[uint16(c[0])<<8|uint16(c[1])]
+		p1 := base58InversePairs[uint16(c[2])<<8|uint16(c[3])]
 		d4 := base58InverseFull[c[4]]
-		bad |= d0 | d1 | d2 | d3 | d4
-		intermediate[gi] = uint64(d0)*11316496 +
-			uint64(d1)*195112 +
-			uint64(d2)*3364 +
-			uint64(d3)*58 +
+		pairBad |= p0 | p1 | uint16(d4)<<8
+		intermediate[gi] = uint64(p0)*195112 +
+			uint64(p1)*58 +
 			uint64(d4)
 		i += 5
 	}
-	if bad >= 64 {
+	if bad >= 64 || pairBad >= 0x8000 {
 		return ErrInvalidChar
 	}
 
-	// Matrix-vector multiply (assembly on arm64, Go on other archs).
-	var bin [binarySz32]uint64
-	decodeMatMul32(&intermediate, &bin)
-
-	// Register-carried normalization: avoids the store-to-load forwarding
-	// penalty of updating the array in place inside the serial chain.
-	v := bin[binarySz32-1]
-	for i := binarySz32 - 1; i >= 1; i-- {
-		bin[i] = v & 0xFFFFFFFF
-		v = bin[i-1] + (v >> 32)
-	}
-	bin[0] = v
-
-	if bin[0] > 0xFFFFFFFF {
+	if !decode32Write(&intermediate, dst) {
 		return ErrValueTooLarge
-	}
-
-	for i := 0; i < binarySz32; i += 2 {
-		binary.BigEndian.PutUint64(dst[i*4:i*4+8], bin[i]<<32|bin[i+1])
 	}
 
 	return validateLeadingZeros(encoded, dst[:])
@@ -374,28 +354,47 @@ func Decode64(encoded string, dst *[64]byte) error {
 		return ErrInvalidChar
 	}
 
-	// Matrix-vector multiply (assembly head + reused 32-byte assembly tail
-	// on amd64; bounded Go loops on other archs).
-	var bin [binarySz64]uint64
-	decodeMatMul64(&intermediate, &bin)
+	if !decode64Write(&intermediate, dst) {
+		return ErrValueTooLarge
+	}
 
-	// Register-carried normalization (see Decode32).
+	return validateLeadingZeros(encoded, dst[:])
+}
+
+func decode32WriteSlow(intermediate *[intermediateSz32]uint64, dst *[32]byte) bool {
+	var bin [binarySz32]uint64
+	decodeMatMul32(intermediate, &bin)
+	v := bin[binarySz32-1]
+	for i := binarySz32 - 1; i >= 1; i-- {
+		bin[i] = v & 0xFFFFFFFF
+		v = bin[i-1] + (v >> 32)
+	}
+	bin[0] = v
+	if bin[0] > 0xFFFFFFFF {
+		return false
+	}
+	for i := 0; i < binarySz32; i += 2 {
+		binary.BigEndian.PutUint64(dst[i*4:i*4+8], bin[i]<<32|bin[i+1])
+	}
+	return true
+}
+
+func decode64WriteSlow(intermediate *[intermediateSz64]uint64, dst *[64]byte) bool {
+	var bin [binarySz64]uint64
+	decodeMatMul64(intermediate, &bin)
 	v := bin[binarySz64-1]
 	for i := binarySz64 - 1; i >= 1; i-- {
 		bin[i] = v & 0xFFFFFFFF
 		v = bin[i-1] + (v >> 32)
 	}
 	bin[0] = v
-
 	if bin[0] > 0xFFFFFFFF {
-		return ErrValueTooLarge
+		return false
 	}
-
 	for i := 0; i < binarySz64; i += 2 {
 		binary.BigEndian.PutUint64(dst[i*4:i*4+8], bin[i]<<32|bin[i+1])
 	}
-
-	return validateLeadingZeros(encoded, dst[:])
+	return true
 }
 
 // validateLeadingZeros verifies that the number of leading '1' characters in

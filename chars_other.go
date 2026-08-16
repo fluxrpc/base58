@@ -2,6 +2,10 @@
 
 package base58
 
+func appendEncode64Fast(dst []byte, src *[64]byte) ([]byte, bool) {
+	return nil, false
+}
+
 func extractChars32(intermediate *[intermediateSz32]uint64, raw *[raw58Buf32]byte) {
 	extractChars32Generic(intermediate, raw)
 }

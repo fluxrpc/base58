@@ -41,6 +41,12 @@ func encodeMatMul64HeadAVX2(src *[64]byte, intermediate *[intermediateSz64]uint6
 //go:noescape
 func decodeMatMul64AVX2(intermediate *[intermediateSz64]uint64, bin *[binarySz64]uint64)
 
+//go:noescape
+func decode32Write(intermediate *[intermediateSz32]uint64, dst *[32]byte) bool
+
+//go:noescape
+func decode64Write(intermediate *[intermediateSz64]uint64, dst *[64]byte) bool
+
 // encWide64/decWide64 are the head rows of encTable64/decTable64 with
 // entries zero-extended to u64 lanes for VPMULUDQ (which multiplies the low
 // 32 bits of each 64-bit lane). encWide64 is padded to 20 columns so the

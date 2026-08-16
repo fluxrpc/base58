@@ -89,6 +89,10 @@ var base58Pairs [3364]uint16
 // one branch validates a whole group.
 var base58InverseFull [256]uint8
 
+// base58InversePairs maps two input bytes to d0*58+d1. The invalid sentinel
+// has its high bit set, while every valid pair is below 58^2.
+var base58InversePairs [1 << 16]uint16
+
 func init() {
 	for x := range base58Pairs {
 		base58Pairs[x] = uint16(base58Chars[x%58])<<8 | uint16(base58Chars[x/58])
@@ -98,6 +102,14 @@ func init() {
 	}
 	for d, c := range base58Chars {
 		base58InverseFull[c] = uint8(d)
+	}
+	for i := range base58InversePairs {
+		base58InversePairs[i] = 0xffff
+	}
+	for d0, c0 := range base58Chars {
+		for d1, c1 := range base58Chars {
+			base58InversePairs[uint16(c0)<<8|uint16(c1)] = uint16(d0*58 + d1)
+		}
 	}
 	for i := range encTable64 {
 		lo, hi := 0, len(encTable64[i])
