@@ -6,11 +6,18 @@ import (
 	"bytes"
 	"crypto/rand"
 	mrand "math/rand"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestAVX2AvailableWhenRequired(t *testing.T) {
+	if os.Getenv("BASE58_REQUIRE_AVX2") == "1" && !useAVX2 {
+		t.Fatal("BASE58_REQUIRE_AVX2=1, but runtime AVX2 detection is false")
+	}
+}
 
 // TestScalarFallback_Matches runs the fixed-size paths with the AVX2 kernels
 // disabled and cross-checks results against the default configuration, so the

@@ -106,3 +106,13 @@ variable-length implementation, and fuzzing (`go test -fuzz`). The AVX2
 kernels are gated by runtime CPUID detection; scalar assembly (amd64,
 arm64) and pure Go fallbacks are exercised by `TestScalarFallback_Matches`
 and cross-architecture builds.
+
+## License and attribution
+
+This package contains an Apache-2.0-licensed Go/assembly port derived from
+Firedancer's base58 implementation and the corresponding solana-go port. See
+`LICENSE` and `NOTICE` for the retained upstream terms and attribution.
+
+Original modifications and additions authored by AlphaBatem Labs are also
+available under the scoped MIT terms in `LICENSE-MIT`. That MIT grant applies
+only to AlphaBatem Labs' work and does not relicense upstream material.

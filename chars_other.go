@@ -1,5 +1,7 @@
 //go:build !amd64
 
+// Derived from Apache-2.0-licensed Firedancer work and modified by AlphaBatem
+// Labs. See LICENSE, LICENSE-MIT, and NOTICE.
 package base58
 
 func appendEncode64Fast(dst []byte, src *[64]byte) ([]byte, bool) {

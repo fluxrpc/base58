@@ -1,0 +1,22 @@
+base58
+
+This product includes software derived from the Firedancer base58
+implementation:
+
+    https://github.com/firedancer-io/firedancer/tree/main/src/ballet/base58
+    Copyright 2022 Firedancer Contributors
+    Licensed under the Apache License, Version 2.0
+
+It also includes portions adapted from the Apache-2.0-licensed base58 package
+in solana-foundation/solana-go, which itself ports the Firedancer algorithm:
+
+    https://github.com/solana-foundation/solana-go/tree/main/base58
+
+The derived implementation has been ported to Go assembly and modified by
+AlphaBatem Labs, including portable codec optimizations, AVX2 kernels and
+dispatch, allocation-reducing APIs, batching, caching, and expanded tests.
+
+Copyright 2026 AlphaBatem Labs applies only to AlphaBatem Labs' original
+modifications and additions. Those modifications are available under the
+scoped MIT terms in LICENSE-MIT. No upstream or third-party material is
+claimed as original AlphaBatem Labs work or relicensed by LICENSE-MIT.

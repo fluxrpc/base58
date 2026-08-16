@@ -1,5 +1,7 @@
 //go:build !arm64 && !amd64
 
+// Derived from Apache-2.0-licensed Firedancer/solana-go work and modified by
+// AlphaBatem Labs. See LICENSE, LICENSE-MIT, and NOTICE.
 package base58
 
 import "encoding/binary"

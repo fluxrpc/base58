@@ -1,3 +1,5 @@
+// Derived from Apache-2.0-licensed solana-go tests and modified by AlphaBatem
+// Labs. See LICENSE, LICENSE-MIT, and NOTICE.
 package base58
 
 import (

@@ -1,0 +1,74 @@
+name: Test
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-amd64-avx2
+            runner: ubuntu-24.04
+            require_avx2: "1"
+          - name: linux-arm64
+            runner: ubuntu-24.04-arm
+            require_avx2: "0"
+          - name: macos-arm64
+            runner: macos-latest
+            require_avx2: "0"
+    runs-on: ${{ matrix.runner }}
+    env:
+      BASE58_REQUIRE_AVX2: ${{ matrix.require_avx2 }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go test ./...
+
+  race:
+    name: race-and-checkptr
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go test -race ./...
+      - run: go test -gcflags=all=-d=checkptr=2 ./...
+
+  fuzz:
+    name: fuzz-smoke
+    runs-on: ubuntu-24.04
+    env:
+      BASE58_REQUIRE_AVX2: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run every fuzz target
+        shell: bash
+        run: |
+          for target in \
+            FuzzEncode32_MatchesVariable \
+            FuzzEncode64_MatchesVariable \
+            FuzzDecode32_MatchesVariable \
+            FuzzDecode64_MatchesVariable \
+            FuzzEncodeDecode_RoundTrip \
+            FuzzDecode32_NoPanic \
+            FuzzDecode64_NoPanic \
+            FuzzDecode_NoPanic
+          do
+            go test -run '^$' -fuzz "^${target}$" -fuzztime 5s
+          done

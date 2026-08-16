@@ -1,3 +1,5 @@
+// Derived from Apache-2.0-licensed Firedancer/solana-go work and modified by
+// AlphaBatem Labs. See LICENSE, LICENSE-MIT, and NOTICE.
 #include "textflag.h"
 
 // func encodeMatMul32Scalar(src *[32]byte, intermediate *[9]uint64)
