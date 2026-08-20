@@ -13,7 +13,7 @@ func appendEncode64Fast(dst []byte, src *[64]byte) ([]byte, bool) {
 		return nil, false
 	}
 	storage := dst[:cap(dst)]
-	n := encode64DirectAVX2(src, &storage[start])
+	n := encode64FullAVX2(src, &storage[start], false)
 	return storage[:start+n], true
 }
 

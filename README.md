@@ -110,11 +110,34 @@ Treat differences below 10% as parity.
 
 | Operation | Time | Allocations |
 |---|---:|---:|
-| `AppendEncode32` | ~32.9 ns | 0 |
-| `Decode32` | ~30.2 ns | 0 |
-| `AppendEncode64` | ~73.8 ns | 0 |
-| `Decode64` | ~59.9 ns | 0 |
+| `Encode32` | ~56.9 ns | 1 |
+| `AppendEncode32` | ~31.5 ns | 0 |
+| `Decode32` | ~20.3 ns | 0 |
+| `Encode64` | ~96.5 ns | 1 |
+| `AppendEncode64` | ~66.2 ns | 0 |
+| `Decode64` | ~31.3 ns | 0 |
 | `EncodeCached32` hit | ~5.40 ns | 0 |
+
+### Versus solana-go PR #479
+
+This is a same-machine comparison against PR head
+`49f477997d0355bbda54c126a9ef128a668d46fb`, not the submitter's benchmark
+from a different CPU. Both packages ran in the same binary on the same input.
+
+| Operation | This package | PR #479 | Difference |
+|---|---:|---:|---:|
+| `Encode32` | **56.86 ns** | 63.51 ns | **10.5% faster** |
+| `AppendEncode32` | **31.51 ns** | 43.45 ns | **27.5% faster** |
+| `Decode32` | **20.31 ns** | 23.31 ns | **12.9% faster** |
+| `Encode64` | 96.47 ns | 96.43 ns | parity (<0.1%) |
+| `AppendEncode64` | **66.18 ns** | 72.24 ns | **8.4% faster** |
+| `Decode64` | **31.27 ns** | 38.42 ns | **18.6% faster** |
+
+These are medians from 13 fresh processes at 100 ms per benchmark, with
+forward/reverse benchmark order alternated on each run. `GOMAXPROCS=1` and
+`taskset -c 7` pinned execution to one i7-9700K core. Encode calls allocate
+one returned string (48 B for 32-byte input, 96 B for 64-byte input); append
+and decode calls allocate nothing.
 
 ### Reproduce
 
@@ -122,6 +145,11 @@ Treat differences below 10% as parity.
 # 16 B–1 KiB corpus
 GOMAXPROCS=1 go test -run '^$' \
   -bench 'BenchmarkBase58_Append(Encode|Decode)Corpus' \
+  -benchmem -benchtime=1s -count=5
+
+# 32/64-byte Solana hot paths
+taskset -c 7 env GOMAXPROCS=1 go test -run '^$' \
+  -bench 'BenchmarkBase58_(Encode32|AppendEncode32|Decode32|Encode64|AppendEncode64|Decode64)$' \
   -benchmem -benchtime=1s -count=5
 
 # 1, 5, and 10 MiB account payloads
