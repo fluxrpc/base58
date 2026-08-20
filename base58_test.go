@@ -578,6 +578,57 @@ func BenchmarkBase58_AppendDecodeCorpus(b *testing.B) {
 	}
 }
 
+func BenchmarkBase58_EncodeScale(b *testing.B) {
+	for _, tc := range []struct {
+		name string
+		size int
+	}{
+		{"128B", 128},
+		{"256B", 256},
+		{"512B", 512},
+		{"1KiB", 1 << 10},
+		{"4KiB", 4 << 10},
+		{"16KiB", 16 << 10},
+		{"64KiB", 64 << 10},
+		{"256KiB", 256 << 10},
+		{"1MiB", 1 << 20},
+	} {
+		src := benchmarkCorpusValue(tc.size, 0)
+		b.Run(tc.name, func(b *testing.B) {
+			b.SetBytes(int64(tc.size))
+			for b.Loop() {
+				Encode(src)
+			}
+		})
+	}
+}
+
+func BenchmarkBase58_DecodeScale(b *testing.B) {
+	for _, tc := range []struct {
+		name string
+		size int
+	}{
+		{"128B", 128},
+		{"256B", 256},
+		{"512B", 512},
+		{"1KiB", 1 << 10},
+		{"4KiB", 4 << 10},
+		{"16KiB", 16 << 10},
+		{"64KiB", 64 << 10},
+		{"256KiB", 256 << 10},
+		{"1MiB", 1 << 20},
+	} {
+		src := benchmarkCorpusValue(tc.size, 0)
+		encoded := Encode(src)
+		b.Run(tc.name, func(b *testing.B) {
+			b.SetBytes(int64(tc.size))
+			for b.Loop() {
+				Decode(encoded)
+			}
+		})
+	}
+}
+
 func BenchmarkBase58_AppendEncodeLarge(b *testing.B) {
 	for _, tc := range []struct {
 		name string

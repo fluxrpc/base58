@@ -284,13 +284,8 @@ func appendDecodeVariableScratch(dst []byte, s string, zeros int, limbs []uint64
 	return dst, nil
 }
 
-// Decode32 decodes a base58 string into a 32-byte array.
-func Decode32(encoded string, dst *[32]byte) error {
+func decode32Generic(encoded string, dst *[32]byte) error {
 	encLen := len(encoded)
-	if encLen == 0 || encLen > raw58Sz32 {
-		return ErrInvalidLength
-	}
-
 	// Build the base-58^5 groups directly from the string: raw58Sz32 is a
 	// multiple of 5, so the string's 5-char tail groups align exactly with
 	// the left-padded digit groups; the head group takes the remainder.
@@ -331,13 +326,8 @@ func Decode32(encoded string, dst *[32]byte) error {
 	return validateLeadingZeros(encoded, dst[:])
 }
 
-// Decode64 decodes a base58 string into a 64-byte array.
-func Decode64(encoded string, dst *[64]byte) error {
+func decode64Generic(encoded string, dst *[64]byte) error {
 	encLen := len(encoded)
-	if encLen == 0 || encLen > raw58Sz64 {
-		return ErrInvalidLength
-	}
-
 	// Build the base-58^5 groups directly from the string (see Decode32).
 	var intermediate [intermediateSz64]uint64
 	var bad byte

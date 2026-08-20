@@ -741,3 +741,102 @@ The same 1 MiB value through base58-turbo v0.3.0's public unbounded API took
 9.74 s encode / 5.89 s decode, making the new Go tier ~6.1x / ~10.7x faster.
 
 ---
+
+## 2026-08-20 — Attempt 26: full AVX2 fixed-width fusion and PR #479 A/B ✅
+
+Reviewed solana-foundation/solana-go PR #479 at
+`49f477997d0355bbda54c126a9ef128a668d46fb`. Its headline numbers were from a
+different architecture, so the PR code and this package were built into one
+comparison binary and run on the pinned i7-9700K used for this log.
+
+The useful criticism was narrower than “the vectorization was wrong”: our old
+fixed decoders vectorized matrix multiplication but still crossed between Go
+and assembly for validation, base-58⁵ grouping, and normalization. Retained:
+
+- full fused AVX2 Decode32/Decode64 kernels, including validation, Horner
+  grouping, matrix multiplication, carry normalization, and output;
+- fixed 43- and 87-character entry points with constant load offsets and
+  precomputed lane-aware padding masks;
+- character conversion that reuses the validator's one-hot ASCII class to
+  select each digit base. This removes six SIMD instructions per input vector
+  and independently improved Decode32 21.25→20.54 ns and Decode64
+  32.04→31.07 ns in alternating old/new A/B runs;
+- a complete AVX2 Encode64 kernel. Owned output uses its allocation's safe
+  tail space, while AppendEncode64 retains the stronger guarantee that bytes
+  past the returned slice length are not modified.
+
+Same-input, 13-process medians (100 ms per benchmark, order alternated):
+
+| Operation | this package | PR #479 | result |
+|---|---:|---:|---:|
+| Encode32 | 56.86 ns | 63.51 ns | 10.5% faster |
+| AppendEncode32 | 31.51 ns | 43.45 ns | 27.5% faster |
+| Decode32 | 20.31 ns | 23.31 ns | 12.9% faster |
+| Encode64 | 96.47 ns | 96.43 ns | parity (<0.1%) |
+| AppendEncode64 | 66.18 ns | 72.24 ns | 8.4% faster |
+| Decode64 | 31.27 ns | 38.42 ns | 18.6% faster |
+
+Rejected after pinned A/B measurement: a common-length Go branch reorder
+(5–7% slower from code layout), a nominally shorter but dependency-serialized
+digit-offset sequence (~3% slower), and two out-of-line Encode64 branch
+layouts that improved isolated raw work but regressed the public allocating
+call. A pointer-tagged two-argument assembly ABI was also rejected: the tiny
+potential gain did not justify weakening GC/checkptr safety.
+
+Final `go test`, race detector, vet (including assembly checks), linux/arm64
+and linux/386 cross-builds, and 368,628 targeted fuzz executions pass.
+
+---
+
+## 2026-08-20 — Attempt 27: specialized ownership and constant reuse ✅
+
+Continued from the PR #479 fusion checkpoint, concentrating on the remaining
+64-byte parity result and measuring the assembly entry point separately from
+Go's noisy allocator:
+
+- split the common non-zero Encode64 and AppendEncode64 cases into two-argument
+  kernels, removing general leading-zero scans and unused ABI state;
+- cached all eight digit-to-character constants in dead YMM registers across
+  the three output vectors, reducing their constant loads from 24 to 8. The
+  isolated owned kernel improved from a 65.2 ns median to 62.4 ns;
+- made owned Encode64 write the fixed 90-character raw form directly to its
+  allocation and return the two- or three-byte prefix skip. The returned string
+  points into that owned object, removing three stack stores and three reloads;
+- switched the 44- and 96-byte owned allocations to fixed objects. Isolated
+  allocator medians improved 25.3→24.4 ns and 30.5→29.4 ns respectively;
+- moved Encode32's common 43/44-character length selection to a branchless
+  carry calculation and its rare leading-zero scans out of line;
+- refined decoder ASCII classification into exact alphabet ranges, improving
+  the fixed Decode64 path without weakening invalid-character detection.
+
+Several plausible rewrites were rejected rather than benchmarked into the
+result: a compact digit range classifier was invalid because some alphabet
+ranges cross nibble boundaries; an exact four-table replacement was correct
+but regressed the owned kernel from ~61.2 to ~62.4 ns by saturating the i7's
+shuffle port; register-only output stitching was slower than store forwarding;
+and removing Encode32's outer AVX2 guard exposed the assembly fallback's lack
+of a typed stack map during forced stack growth, so it was reverted.
+
+Final same-input, 13-process medians (100 ms, forward/reverse order alternated,
+one pinned i7-9700K core):
+
+| Operation | this package | PR #479 | result |
+|---|---:|---:|---:|
+| Encode32 | 56.90 ns | 62.41 ns | 8.8% faster |
+| AppendEncode32 | 30.81 ns | 43.24 ns | 28.8% faster |
+| Decode32 | 19.55 ns | 23.33 ns | 16.2% faster |
+| Encode64 | 93.35 ns | 95.97 ns | 2.7% faster |
+| AppendEncode64 | 66.28 ns | 71.96 ns | 7.9% faster |
+| Decode64 | 30.48 ns | 38.15 ns | 20.1% faster |
+
+The comparison uses PR head `49f477997d0355bbda54c126a9ef128a668d46fb`
+inside the same benchmark binary. All six fixed-width APIs now lead on the
+same i7; the isolated owned Encode64 kernel leads the PR assembly entry point
+by roughly 7–8%, with the public allocating call retaining a smaller 2.7% lead.
+
+The full suite, race detector, vet/assembly checks, aggressive checkptr run,
+linux/386, arm64, and riscv64 cross-builds, and 209,239 targeted fixed-width
+fuzz executions pass. Checkptr's instrumentation-only allocation-count changes
+were excluded from its run; the ordinary zero-allocation assertions pass.
+
+---

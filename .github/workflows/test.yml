@@ -44,7 +44,9 @@ jobs:
           go-version-file: go.mod
           cache: true
       - run: go test -race ./...
-      - run: go test -gcflags=all=-d=checkptr=2 ./...
+      # checkptr instrumentation adds an allocation around the generic encoder.
+      # Allocation guarantees are enforced by the normal test matrix above.
+      - run: go test -gcflags=all=-d=checkptr=2 -skip ZeroAlloc ./...
 
   fuzz:
     name: fuzz-smoke

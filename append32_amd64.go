@@ -11,8 +11,8 @@ func encode32Fast(src *[32]byte) ([]byte, bool) {
 	if !useAVX2 {
 		return nil, false
 	}
-	out := make([]byte, 0, EncodedMaxLen32)
-	return AppendEncode32(out, src), true
+	storage := new([EncodedMaxLen32]byte)
+	return AppendEncode32(storage[:0], src), true
 }
 
 func appendEncode32Slow(dst []byte, src *[32]byte) []byte {
