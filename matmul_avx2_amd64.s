@@ -704,31 +704,8 @@ TEXT ·AppendEncode32(SB), NOSPLIT, $192-56
 	CMPB	0(SI), $0
 	JEQ	direct_scan_zeros
 	MOVQ	$1, DX
-	CMPB	1(DI), $'1'
-	JNE	direct_raw_done
-	INCQ	DX
-	JMP	direct_raw_done
-
-	// Leading-zero inputs use the fully general scans.
-direct_scan_zeros:
-direct_in_zeros:
-	CMPQ	CX, $32
-	JEQ	direct_in_done
-	CMPB	0(SI)(CX*1), $0
-	JNE	direct_in_done
-	INCQ	CX
-	JMP	direct_in_zeros
-direct_in_done:
-
-	// rawZeros = leading zero digits, represented by '1' characters.
-	XORQ	DX, DX
-direct_raw_zeros:
-	CMPQ	DX, $45
-	JEQ	direct_raw_done
-	CMPB	0(DI)(DX*1), $'1'
-	JNE	direct_raw_done
-	INCQ	DX
-	JMP	direct_raw_zeros
+	CMPB	1(DI), $'2'
+	ADCQ	$0, DX
 direct_raw_done:
 	SUBQ	CX, DX                    // skip = rawZeros - inZeros
 	MOVQ	$45, AX
@@ -750,6 +727,27 @@ direct_raw_done:
 	VMOVDQU	X0, -16(SI)(R14*1)
 	VZEROUPPER
 	RET
+
+	// Leading-zero inputs use the fully general scans out of line.
+direct_scan_zeros:
+direct_in_zeros:
+	CMPQ	CX, $32
+	JEQ	direct_in_done
+	CMPB	0(SI)(CX*1), $0
+	JNE	direct_in_done
+	INCQ	CX
+	JMP	direct_in_zeros
+direct_in_done:
+
+	// rawZeros = leading zero digits, represented by '1' characters.
+	XORQ	DX, DX
+direct_raw_zeros:
+	CMPQ	DX, $45
+	JEQ	direct_raw_done
+	CMPB	0(DI)(DX*1), $'1'
+	JNE	direct_raw_done
+	INCQ	DX
+	JMP	direct_raw_zeros
 
 append32_slow:
 	MOVQ	dst_base+0(FP), AX

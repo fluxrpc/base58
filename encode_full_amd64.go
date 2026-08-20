@@ -7,6 +7,16 @@ package base58
 //go:noescape
 func encode64FullAVX2(src *[64]byte, dst *byte, clobberTail bool) int
 
+// encode64FullOwnedAVX2 writes the 90 raw characters at dst and returns the
+// two- or three-byte prefix to skip. Encode64 can point its owned string into
+// that allocation, avoiding the realignment required by append.
+//
+//go:noescape
+func encode64FullOwnedAVX2(src *[64]byte, dst *byte) int
+
+//go:noescape
+func encode64FullAppendAVX2(src *[64]byte, dst *byte) int
+
 var encFullTable64 [binarySz64][20]uint64
 
 func init() {

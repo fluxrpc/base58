@@ -1,0 +1,307 @@
+//go:build amd64
+
+#include "textflag.h"
+
+// Derived from Apache-2.0-licensed Firedancer/solana-go work and modified by
+// AlphaBatem Labs. See LICENSE, LICENSE-MIT, and NOTICE.
+
+#define REDUCE \
+	MOVQ BX, AX; MULQ R9; SHRQ $29, DX; \
+	MOVQ DX, AX; IMULQ R10, AX; SUBQ AX, BX
+
+// STEP: BX = off(SP) + carry, reduced.
+#define STEP(off) \
+	MOVQ off(SP), BX; ADDQ DX, BX; REDUCE
+
+// SHIFT: dst = src shifted down skip%16 bytes; nxt = [src.hi | next.lo].
+// Y11 = iota+skip%16+112, Y12 = iota+skip%16-16 (out-of-lane bytes zero).
+#define SHIFT(src, nxt, dst) \
+	VPSHUFB Y11, src, Y13; VPSHUFB Y12, nxt, Y14; VPOR Y14, Y13, dst
+
+// I2R: 4 limbs < 58^5 in the qwords of in -> 20 digits, 10 per lane, MSD
+// first. Y4 = spread, Y5 = 2^37/58, Y6 = 2^42/58^2, Y7 = 58. out may be in.
+#define I2R(in, out) \
+	VPMULUDQ Y5, in, Y8;   VPSRLQ $37, Y8, Y8; \
+	VPMULUDQ Y7, Y8, Y9;   VPSUBQ Y9, in, Y9; \
+	VPSRLQ $2, in, Y10;    VPMULUDQ Y6, Y10, Y10; VPSRLQ $40, Y10, Y10; \
+	VPMULUDQ Y7, Y10, Y11; VPSUBQ Y11, Y8, Y11; \
+	VPSRLQ $2, Y8, Y12;    VPMULUDQ Y6, Y12, Y12; VPSRLQ $40, Y12, Y12; \
+	VPMULUDQ Y7, Y12, Y13; VPSUBQ Y13, Y10, Y13; \
+	VPSRLQ $2, Y10, Y14;   VPMULUDQ Y6, Y14, Y14; VPSRLQ $40, Y14, Y14; \
+	VPMULUDQ Y7, Y14, Y8;  VPSUBQ Y8, Y12, Y8; \
+	VPSHUFB Y4, Y14, out; \
+	VPSHUFB Y4, Y8, Y8;    VPSLLDQ $1, Y8, Y8;   VPOR Y8, out, out; \
+	VPSHUFB Y4, Y13, Y13;  VPSLLDQ $2, Y13, Y13; VPOR Y13, out, out; \
+	VPSHUFB Y4, Y11, Y11;  VPSLLDQ $3, Y11, Y11; VPOR Y11, out, out; \
+	VPSHUFB Y4, Y9, Y9;    VPSLLDQ $4, Y9, Y9;   VPOR Y9, out, out
+
+// R2B: digit -> char in place: '1' + x + 7[x>8] + [x>16] + [x>21] + 6[x>32] + [x>43].
+// Y0..Y3/Y7/Y10..Y12 cache the eight constants across all three vectors.
+#define R2B(v, t1, t2) \
+	VPCMPGTB Y0, v, t1;  VPAND Y10, t1, t1; \
+	VPCMPGTB Y1, v, t2; VPAND Y11, t2, t2; VPADDB t2, t1, t1; \
+	VPCMPGTB Y2, v, t2; VPADDB t2, t1, t1; \
+	VPCMPGTB Y3, v, t2; VPADDB t2, t1, t1; \
+	VPCMPGTB Y7, v, t2; VPADDB t2, t1, t1; \
+	VPADDB Y12, t1, t1; \
+	VPSUBB t1, v, v
+
+// C2D: char -> digit in place; bad |= 0xFF where invalid.
+// Y13/Y14 = nibble tables, Y15 = 0x0F, Y12 = 0.
+
+// src[0] is non-zero; the Go wrapper routes the rare leading-zero case to
+// the existing overlap-safe direct kernel.
+// func encode64FullAppendAVX2(src *[64]byte, dst *byte) int
+// Frame: 0 bin[16]u32, 64 im[21]u64, 232 partial im[13..16] sums.
+TEXT ·encode64FullAppendAVX2(SB), NOSPLIT, $304-24
+	MOVQ src+0(FP), SI
+	MOVQ dst+8(FP), DI
+	VMOVDQU (SI), Y0
+	VMOVDQU 32(SI), Y1
+	VMOVDQU ·encFullBswap(SB), Y3
+	VPSHUFB Y3, Y0, Y0
+	VPSHUFB Y3, Y1, Y1
+	VMOVDQU Y0, 0(SP)
+	VMOVDQU Y1, 32(SP)
+
+	// Y2..Y6 = im[1..4], [5..8], [9..12], [13..16], [17..20]; im[13..16] is
+	// split into Y5 (rows 0-7) + Y7 (rows 8-15) since im[16] can overflow.
+	LEAQ ·encFullTable64(SB), DX
+	VPXOR Y2, Y2, Y2
+	VPXOR Y3, Y3, Y3
+	VPXOR Y4, Y4, Y4
+	VPXOR Y5, Y5, Y5
+	VPXOR Y6, Y6, Y6
+	VPXOR Y7, Y7, Y7
+	VPBROADCASTD 0(SP), Y8
+	VPMULUDQ 0(DX), Y8, Y9; VPADDQ Y9, Y2, Y2
+	VPMULUDQ 32(DX), Y8, Y9; VPADDQ Y9, Y3, Y3
+	VPMULUDQ 64(DX), Y8, Y9; VPADDQ Y9, Y4, Y4
+	VPMULUDQ 96(DX), Y8, Y9; VPADDQ Y9, Y5, Y5
+	VPMULUDQ 128(DX), Y8, Y9; VPADDQ Y9, Y6, Y6
+	VPBROADCASTD 4(SP), Y8
+	VPMULUDQ 160(DX), Y8, Y9; VPADDQ Y9, Y2, Y2
+	VPMULUDQ 192(DX), Y8, Y9; VPADDQ Y9, Y3, Y3
+	VPMULUDQ 224(DX), Y8, Y9; VPADDQ Y9, Y4, Y4
+	VPMULUDQ 256(DX), Y8, Y9; VPADDQ Y9, Y5, Y5
+	VPMULUDQ 288(DX), Y8, Y9; VPADDQ Y9, Y6, Y6
+	VPBROADCASTD 8(SP), Y8
+	VPMULUDQ 320(DX), Y8, Y9; VPADDQ Y9, Y2, Y2
+	VPMULUDQ 352(DX), Y8, Y9; VPADDQ Y9, Y3, Y3
+	VPMULUDQ 384(DX), Y8, Y9; VPADDQ Y9, Y4, Y4
+	VPMULUDQ 416(DX), Y8, Y9; VPADDQ Y9, Y5, Y5
+	VPMULUDQ 448(DX), Y8, Y9; VPADDQ Y9, Y6, Y6
+	VPBROADCASTD 12(SP), Y8
+	VPMULUDQ 480(DX), Y8, Y9; VPADDQ Y9, Y2, Y2
+	VPMULUDQ 512(DX), Y8, Y9; VPADDQ Y9, Y3, Y3
+	VPMULUDQ 544(DX), Y8, Y9; VPADDQ Y9, Y4, Y4
+	VPMULUDQ 576(DX), Y8, Y9; VPADDQ Y9, Y5, Y5
+	VPMULUDQ 608(DX), Y8, Y9; VPADDQ Y9, Y6, Y6
+	VPBROADCASTD 16(SP), Y8
+	VPMULUDQ 672(DX), Y8, Y9; VPADDQ Y9, Y3, Y3
+	VPMULUDQ 704(DX), Y8, Y9; VPADDQ Y9, Y4, Y4
+	VPMULUDQ 736(DX), Y8, Y9; VPADDQ Y9, Y5, Y5
+	VPMULUDQ 768(DX), Y8, Y9; VPADDQ Y9, Y6, Y6
+	VPBROADCASTD 20(SP), Y8
+	VPMULUDQ 832(DX), Y8, Y9; VPADDQ Y9, Y3, Y3
+	VPMULUDQ 864(DX), Y8, Y9; VPADDQ Y9, Y4, Y4
+	VPMULUDQ 896(DX), Y8, Y9; VPADDQ Y9, Y5, Y5
+	VPMULUDQ 928(DX), Y8, Y9; VPADDQ Y9, Y6, Y6
+	VPBROADCASTD 24(SP), Y8
+	VPMULUDQ 992(DX), Y8, Y9; VPADDQ Y9, Y3, Y3
+	VPMULUDQ 1024(DX), Y8, Y9; VPADDQ Y9, Y4, Y4
+	VPMULUDQ 1056(DX), Y8, Y9; VPADDQ Y9, Y5, Y5
+	VPMULUDQ 1088(DX), Y8, Y9; VPADDQ Y9, Y6, Y6
+	VPBROADCASTD 28(SP), Y8
+	VPMULUDQ 1184(DX), Y8, Y9; VPADDQ Y9, Y4, Y4
+	VPMULUDQ 1216(DX), Y8, Y9; VPADDQ Y9, Y5, Y5
+	VPMULUDQ 1248(DX), Y8, Y9; VPADDQ Y9, Y6, Y6
+	VPBROADCASTD 32(SP), Y8
+	VPMULUDQ 1344(DX), Y8, Y9; VPADDQ Y9, Y4, Y4
+	VPMULUDQ 1376(DX), Y8, Y9; VPADDQ Y9, Y7, Y7
+	VPMULUDQ 1408(DX), Y8, Y9; VPADDQ Y9, Y6, Y6
+	VPBROADCASTD 36(SP), Y8
+	VPMULUDQ 1504(DX), Y8, Y9; VPADDQ Y9, Y4, Y4
+	VPMULUDQ 1536(DX), Y8, Y9; VPADDQ Y9, Y7, Y7
+	VPMULUDQ 1568(DX), Y8, Y9; VPADDQ Y9, Y6, Y6
+	VPBROADCASTD 40(SP), Y8
+	VPMULUDQ 1664(DX), Y8, Y9; VPADDQ Y9, Y4, Y4
+	VPMULUDQ 1696(DX), Y8, Y9; VPADDQ Y9, Y7, Y7
+	VPMULUDQ 1728(DX), Y8, Y9; VPADDQ Y9, Y6, Y6
+	VPBROADCASTD 44(SP), Y8
+	VPMULUDQ 1856(DX), Y8, Y9; VPADDQ Y9, Y7, Y7
+	VPMULUDQ 1888(DX), Y8, Y9; VPADDQ Y9, Y6, Y6
+	VPBROADCASTD 48(SP), Y8
+	VPMULUDQ 2016(DX), Y8, Y9; VPADDQ Y9, Y7, Y7
+	VPMULUDQ 2048(DX), Y8, Y9; VPADDQ Y9, Y6, Y6
+	VPBROADCASTD 52(SP), Y8
+	VPMULUDQ 2176(DX), Y8, Y9; VPADDQ Y9, Y7, Y7
+	VPMULUDQ 2208(DX), Y8, Y9; VPADDQ Y9, Y6, Y6
+	VPBROADCASTD 56(SP), Y8
+	VPMULUDQ 2336(DX), Y8, Y9; VPADDQ Y9, Y7, Y7
+	VPMULUDQ 2368(DX), Y8, Y9; VPADDQ Y9, Y6, Y6
+	VPBROADCASTD 60(SP), Y8
+	VPMULUDQ 2528(DX), Y8, Y9; VPADDQ Y9, Y6, Y6
+	VMOVDQU Y2, 72(SP)
+	VMOVDQU Y3, 104(SP)
+	VMOVDQU Y4, 136(SP)
+	VPADDQ Y7, Y5, Y8
+	VMOVDQU Y8, 168(SP)               // im[16] wrapped, fixed below
+	VMOVDQU Y6, 200(SP)               // im[17]
+	VMOVDQU Y5, 232(SP)
+	VMOVDQU Y7, 264(SP)
+
+	// Chains 17..9 and 8..1, carry out of 9 folded into 8 and 7 (see encode32).
+	// Limbs pack into Y0..Y3 = im[0..15], Y15 = im[16..17].
+	MOVQ $0xD1658F5A3402D56A, R9
+	MOVQ $656356768, R10
+	MOVQ 200(SP), BX
+	REDUCE
+	VPINSRQ $1, BX, X15, X15          // im[17]
+	MOVQ 256(SP), BX
+	ADDQ DX, BX
+	REDUCE
+	MOVQ DX, CX
+	ADDQ 288(SP), BX
+	REDUCE
+	VPINSRQ $0, BX, X15, X15          // im[16]
+	ADDQ DX, CX
+	MOVQ 184(SP), BX
+	ADDQ CX, BX
+	REDUCE
+	VPINSRQ $1, BX, X10, X10          // im[15]
+	STEP(176)
+	VPINSRQ $0, BX, X10, X10
+	STEP(168)
+	VPINSRQ $1, BX, X11, X11
+	STEP(160)
+	VPINSRQ $0, BX, X11, X11
+	VINSERTI128 $1, X10, Y11, Y3
+	STEP(152)
+	VPINSRQ $1, BX, X10, X10
+	STEP(144)
+	VPINSRQ $0, BX, X10, X10
+	STEP(136)
+	VPINSRQ $1, BX, X11, X11          // im[9]
+	MOVQ DX, R11                      // carry into limb 8
+	MOVQ 128(SP), BX
+	REDUCE
+	MOVQ BX, R12                      // limb 8 (unpatched)
+	STEP(120)
+	MOVQ BX, R13                      // limb 7 (unpatched)
+	STEP(112)
+	VPINSRQ $0, BX, X12, X12
+	STEP(104)
+	VPINSRQ $1, BX, X13, X13
+	STEP(96)
+	VPINSRQ $0, BX, X13, X13
+	STEP(88)
+	VPINSRQ $1, BX, X14, X14
+	STEP(80)
+	VPINSRQ $0, BX, X14, X14
+	STEP(72)
+	VPINSRQ $1, BX, X9, X9
+	VPINSRQ $0, DX, X9, X9
+	VINSERTI128 $1, X14, Y9, Y0
+	ADDQ R11, R12
+	MOVQ R12, BX
+	REDUCE
+	VPINSRQ $0, BX, X11, X11          // im[8]
+	VINSERTI128 $1, X10, Y11, Y2
+	ADDQ DX, R13
+	MOVQ R13, BX
+	REDUCE
+	VPINSRQ $1, BX, X12, X12          // im[7]
+	VINSERTI128 $1, X12, Y13, Y1
+	TESTQ DX, DX
+	JNZ ripple64
+digits64:
+
+	VMOVDQU ·encFullSpread(SB), Y4
+	VMOVDQU ·encFullDivA(SB), Y5
+	VMOVDQU ·encFullDivB(SB), Y6
+	VMOVDQU ·encFullD58(SB), Y7
+	I2R(Y0, Y0)
+	I2R(Y1, Y1)
+	I2R(Y2, Y2)
+	I2R(Y3, Y3)
+	I2R(Y15, Y15)
+
+	// ten_per_slot_down_64 -> Y4, Y5, Y6
+	VEXTRACTI128 $1, Y0, X8           // hi0
+	VEXTRACTI128 $1, Y1, X9           // hi1
+	VEXTRACTI128 $1, Y2, X10          // hi2
+	VEXTRACTI128 $1, Y3, X11          // hi3
+	VPSLLDQ $10, X8, X12
+	VPOR X12, X0, X4                  // o0
+	VPSRLDQ $6, X8, X12
+	VPSLLDQ $4, X1, X13
+	VPOR X13, X12, X12
+	VPSLLDQ $14, X9, X13
+	VPOR X13, X12, X12                // o1
+	VINSERTI128 $1, X12, Y4, Y4
+	VPSRLDQ $2, X9, X12
+	VPSLLDQ $8, X2, X13
+	VPOR X13, X12, X5                 // o2
+	VPSRLDQ $8, X2, X12
+	VPSLLDQ $2, X10, X13
+	VPOR X13, X12, X12
+	VPSLLDQ $12, X3, X13
+	VPOR X13, X12, X12                // o3
+	VINSERTI128 $1, X12, Y5, Y5
+	VPSRLDQ $4, X3, X12
+	VPSLLDQ $6, X11, X13
+	VPOR X13, X12, X6                 // o4
+	VINSERTI128 $1, X15, Y6, Y6       // lo4
+
+	// A non-zero 64-byte input encodes to either 87 or 88 characters, so
+	// the 90-byte raw form skips three digits iff digit 2 is zero.
+	VPEXTRB $2, X4, CX
+	CMPB CX, $1
+	MOVQ $2, CX
+	ADCQ $0, CX
+
+	VMOVDQU ·encFullB8(SB), Y0
+	VMOVDQU ·encFullB32(SB), Y1
+	VMOVDQU ·encFullB16(SB), Y2
+	VMOVDQU ·encFullB21(SB), Y3
+	VMOVDQU ·encFullB43(SB), Y7
+	VMOVDQU ·encFullBm7(SB), Y10
+	VMOVDQU ·encFullBm6(SB), Y11
+	VMOVDQU ·encFullBm49(SB), Y12
+	R2B(Y4, Y8, Y9)
+	R2B(Y5, Y8, Y9)
+	R2B(Y6, Y8, Y9)
+	VMOVDQU Y4, 0(SP)
+	VMOVDQU Y5, 32(SP)
+	VMOVDQU Y6, 64(SP)
+	VMOVDQU (SP)(CX*1), Y8
+	VMOVDQU Y8, (DI)
+	VMOVDQU 32(SP)(CX*1), Y8
+	VMOVDQU Y8, 32(DI)
+	MOVQ $90, AX
+	SUBQ CX, AX
+	VMOVDQU 58(SP), Y8
+	VMOVDQU Y8, -32(DI)(AX*1)
+	MOVQ AX, ret+16(FP)
+	VZEROUPPER
+	RET
+ripple64:
+	VMOVDQU Y0, 64(SP)
+	VMOVDQU Y1, 96(SP)
+	MOVQ $6, CX
+ripple64loop:
+	MOVQ 64(SP)(CX*8), BX
+	ADDQ DX, BX
+	XORL DX, DX
+	CMPQ BX, R10
+	JCS ripple64store
+	SUBQ R10, BX
+	MOVQ $1, DX
+ripple64store:
+	MOVQ BX, 64(SP)(CX*8)
+	DECQ CX
+	JNS ripple64loop
+	VMOVDQU 64(SP), Y0
+	VMOVDQU 96(SP), Y1
+	JMP digits64

@@ -66,16 +66,14 @@ var (
 	decFusedQ    = fusedRep(4, 0x80, 0x80, 0x80, 9, 0x80, 0x80, 0x80, 14, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80)
 	decFusedTail = [32]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
 		1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 0x80}
-	decFusedW1    = fusedRep(58, 1)
-	decFusedW2    = fusedRep(0x24, 0x0D, 1, 0) // int16 {3364, 1}
-	decFusedLoNib = fusedRep(20, 31, 31, 31, 31, 31, 31, 31, 31, 29, 30, 10, 2, 10, 10, 8)
-	decFusedHiNib = fusedRep(0, 0, 0, 1, 2, 4, 8, 16, 0, 0, 0, 0, 0, 0, 0, 0)
-	// Validation produces class bits 1, 2, 4, 8, and 16 for the five
-	// populated ASCII nibbles. PSHUFB wraps class 16 to slot zero.
-	decFusedBase = fusedRep(65, 49, 56, 0, 58, 0, 0, 0, 64, 0, 0, 0, 0, 0, 0, 0)
-	// The J-N and m-o ranges sit one byte beyond their class's base.
-	decFusedCorr = fusedRep(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 10, 10, 10)
-	decFusedB1   = fusedRep(1)
-	decFusedB15  = fusedRep(0x0F)
-	decFusedD58  = fusedRep(58, 0, 0, 0)
+	decFusedW1 = fusedRep(58, 1)
+	decFusedW2 = fusedRep(0x24, 0x0D, 1, 0) // int16 {3364, 1}
+	// Seven one-hot bits distinguish 1-9, A-H, J-N, P-Z, a-k, m-o, and
+	// p-z. Splitting the two gapped nibbles here removes digit correction.
+	decFusedLoNib  = fusedRep(72, 91, 91, 91, 91, 91, 91, 91, 91, 89, 92, 20, 4, 36, 36, 32)
+	decFusedHiNib  = fusedRep(0, 0, 0, 1, 6, 8, 48, 64, 0, 0, 0, 0, 0, 0, 0, 0)
+	decFusedBase   = fusedRep(0, 49, 56, 0, 57, 0, 0, 0, 58, 0, 0, 0, 0, 0, 0, 0)
+	decFusedBaseHi = fusedRep(0, 64, 65, 0, 65, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+	decFusedB15    = fusedRep(0x0F)
+	decFusedD58    = fusedRep(58, 0, 0, 0)
 )

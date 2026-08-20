@@ -6,17 +6,16 @@
 // AlphaBatem Labs. See LICENSE, LICENSE-MIT, and NOTICE.
 
 // C2D converts ASCII base58 characters to digits and accumulates an invalid
-// byte mask. The validation lookup leaves a one-hot character-class bit in
+// byte mask. The validation lookup leaves one of seven one-hot range bits in
 // t2; reuse it to select the ASCII base instead of repeating five threshold
 // comparisons. Y13/Y14 are nibble tables, Y15 is 0x0f, and Y12 is zero.
 #define FUSED_C2D(v, t1, t2, bad) \
 	VPAND Y15, v, t1;                        VPSHUFB t1, Y13, t2; \
 	VPSRLW $4, v, Y10;                       VPAND Y15, Y10, Y10; VPSHUFB Y10, Y14, Y10; \
 	VPAND Y10, t2, t2;                       VPCMPEQB Y12, t2, Y10; VPOR Y10, bad, bad; \
-	VPSHUFB t2, Y7, Y10;                     VPSHUFB t1, Y6, t1; \
-	VPAND t2, t1, t1;                        VPCMPEQB Y12, t1, t1; \
-	VPADDB ·decFusedB1(SB), t1, t1;          VPADDB t1, Y10, Y10; \
-	VPSUBB Y10, v, v
+	VPSHUFB t2, Y7, t1;                      VPSRLW $4, t2, Y10; \
+	VPAND Y15, Y10, Y10;                     VPSHUFB Y10, Y6, Y10; \
+	VPOR Y10, t1, t1;                        VPSUBB t1, v, v
 
 // Three groups of five digits per 128-bit lane become three dword limbs.
 #define FUSED_HORNER(v, p, q) \
@@ -42,7 +41,7 @@ TEXT ·decode32FusedAVX2(SB), NOSPLIT, $128-32
 	VMOVDQU ·decFusedHiNib(SB), Y14
 	VMOVDQU ·decFusedB15(SB), Y15
 	VMOVDQU ·decFusedBase(SB), Y7
-	VMOVDQU ·decFusedCorr(SB), Y6
+	VMOVDQU ·decFusedBaseHi(SB), Y6
 	VPXOR Y12, Y12, Y12
 	VPXOR Y11, Y11, Y11
 	FUSED_C2D(Y0, Y8, Y9, Y11)
@@ -148,7 +147,7 @@ TEXT ·decode32Fused43AVX2(SB), NOSPLIT, $128-24
 	VMOVDQU ·decFusedHiNib(SB), Y14
 	VMOVDQU ·decFusedB15(SB), Y15
 	VMOVDQU ·decFusedBase(SB), Y7
-	VMOVDQU ·decFusedCorr(SB), Y6
+	VMOVDQU ·decFusedBaseHi(SB), Y6
 	VPXOR Y12, Y12, Y12
 	VPXOR Y11, Y11, Y11
 	FUSED_C2D(Y0, Y8, Y9, Y11)
@@ -263,7 +262,7 @@ TEXT ·decode64FusedAVX2(SB), NOSPLIT, $224-32
 	VMOVDQU ·decFusedHiNib(SB), Y14
 	VMOVDQU ·decFusedB15(SB), Y15
 	VMOVDQU ·decFusedBase(SB), Y7
-	VMOVDQU ·decFusedCorr(SB), Y6
+	VMOVDQU ·decFusedBaseHi(SB), Y6
 	VPXOR Y12, Y12, Y12
 	VPXOR Y11, Y11, Y11
 	FUSED_C2D(Y0, Y8, Y9, Y11)
@@ -429,7 +428,7 @@ TEXT ·decode64Fused87AVX2(SB), NOSPLIT, $224-24
 	VMOVDQU ·decFusedHiNib(SB), Y14
 	VMOVDQU ·decFusedB15(SB), Y15
 	VMOVDQU ·decFusedBase(SB), Y7
-	VMOVDQU ·decFusedCorr(SB), Y6
+	VMOVDQU ·decFusedBaseHi(SB), Y6
 	VPXOR Y12, Y12, Y12
 	VPXOR Y11, Y11, Y11
 	FUSED_C2D(Y0, Y8, Y9, Y11)
