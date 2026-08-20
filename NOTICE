@@ -12,6 +12,8 @@ in solana-foundation/solana-go, which itself ports the Firedancer algorithm:
 
     https://github.com/solana-foundation/solana-go/tree/main/base58
 
+Performance ideas were also informed by https://github.com/hacer-bark/base58-turbo.
+
 The derived implementation has been ported to Go assembly and modified by
 AlphaBatem Labs, including portable codec optimizations, AVX2 kernels and
 dispatch, allocation-reducing APIs, batching, caching, and expanded tests.

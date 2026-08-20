@@ -72,8 +72,8 @@ func Decode(encoded string) ([]byte, error) {
 // AppendDecode appends the decoded bytes of encoded to dst and returns the
 // extended buffer — the zero-allocation counterpart of Decode for callers
 // that reuse buffers. With sufficient capacity in dst it does not allocate
-// (except for decoded outputs larger than ~190 bytes, which use a heap limb
-// buffer).
+// for decoded payloads through roughly 1 KiB. Large values use a
+// divide-and-conquer math/big conversion to avoid quadratic limb sweeps.
 func AppendDecode(dst []byte, encoded string) ([]byte, error) {
 	if len(encoded) == 0 {
 		return dst, nil
@@ -125,27 +125,43 @@ var m20Hi, m20Lo = bits.Mul64(pow58u64[10], pow58u64[10])
 
 // appendDecodeVariable is a limb-based base58 decoder for inputs of
 // arbitrary length; it appends the decoded bytes to dst (allocating exactly
-// the required total when dst is nil). Characters are consumed most-significant-first in groups of ten
-// (the leading group takes the length remainder); each group's value
-// (< 58^10 < 2^59) is folded into a little-endian base-2^64 limb array with
-// one 128-bit multiply-accumulate pass: work = work*58^len(group) + group.
+// the required total when dst is nil). Characters are consumed
+// most-significant-first in groups of twenty (the leading group takes the
+// length remainder); each group's two-word value is folded into a
+// little-endian base-2^64 limb array with a two-word multiply-accumulate pass:
+// work = work*58^len(group) + group.
 // This does ~80x fewer inner-loop steps than byte-at-a-time
 // work = work*58 + digit.
 func appendDecodeVariable(dst []byte, encoded string, zeros int) ([]byte, error) {
 	s := encoded[zeros:]
 	n := len(s)
+	if n >= largeDecodeThreshold {
+		return appendDecodeLarge(dst, encoded, zeros)
+	}
 
 	// Upper bound on byte count of the non-leading-zero portion:
 	// ceil(n * log(58)/log(256)) ~ n * 0.7322. Use 733/1000 + 1 for safety.
 	maxBytes := n*733/1000 + 1
 	numLimbs := (maxBytes + 7) / 8
-	var limbArr [24]uint64 // decoded outputs up to ~190 bytes: no allocation
-	var limbs []uint64     // little-endian: limbs[0] is least significant
-	if numLimbs <= len(limbArr) {
-		limbs = limbArr[:numLimbs]
-	} else {
-		limbs = make([]uint64, numLimbs)
+	// Keep small callers' stack frames small while retaining zero-allocation
+	// decode_into behavior through the package's practical 1 KiB payload range.
+	if numLimbs <= 24 {
+		var limbs [24]uint64
+		return appendDecodeVariableScratch(dst, s, zeros, limbs[:numLimbs])
 	}
+	if numLimbs <= 66 {
+		var limbs [66]uint64
+		return appendDecodeVariableScratch(dst, s, zeros, limbs[:numLimbs])
+	}
+	if numLimbs <= 128 {
+		var limbs [128]uint64
+		return appendDecodeVariableScratch(dst, s, zeros, limbs[:numLimbs])
+	}
+	return appendDecodeVariableScratch(dst, s, zeros, make([]uint64, numLimbs))
+}
+
+func appendDecodeVariableScratch(dst []byte, s string, zeros int, limbs []uint64) ([]byte, error) {
+	n := len(s)
 
 	top := 0 // number of active limbs
 	i := 0

@@ -48,6 +48,20 @@ func TestScalarFallback_Matches(t *testing.T) {
 		assert.Equal(t, *src32, dst32)
 		assert.Equal(t, src64, dst64)
 	}
+
+	// The variable-width encoder has separate AVX2 and portable convolution
+	// paths once it starts absorbing 64-byte blocks. Keep them bit-identical.
+	rng := mrand.New(mrand.NewSource(2))
+	for _, size := range []int{9, 12, 16, 31, 33, 48, 63, 65, 100, 128, 256, 1000} {
+		for range 50 {
+			src := make([]byte, size)
+			_, _ = rng.Read(src)
+			useAVX2 = true
+			want := Encode(src)
+			useAVX2 = false
+			assert.Equal(t, want, Encode(src), "size=%d", size)
+		}
+	}
 }
 
 func TestDigitsToChars8_Direct(t *testing.T) {

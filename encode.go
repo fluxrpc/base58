@@ -12,8 +12,8 @@ import (
 // string.
 //
 // Inputs of exactly 32 or 64 bytes — the common Solana sizes (pubkey, hash,
-// signature, private key) — are dispatched to the matrix-multiply fast paths
-// and are ~20x faster than the long-division fallback used for other lengths.
+// signature, private key) — are dispatched to dedicated matrix kernels.
+// Other lengths use width-specific matrix or block-radix paths.
 func Encode(buf []byte) string {
 	switch len(buf) {
 	case 0:
@@ -166,10 +166,19 @@ func encodeSmallTail(b []byte, out []byte) int {
 
 // encodeTail dispatches to the width-appropriate digit generator.
 func encodeTail(b []byte, out []byte) int {
+	if len(b) >= largeEncodeThreshold {
+		return encodeLargeTail(b, out)
+	}
 	if len(b) <= 8 {
 		return encodeSmallTail(b, out)
 	}
-	return encodeVariableTail(b, out)
+	if len(b) <= 32 {
+		return encodeSmallMatrixTail(b, out)
+	}
+	if len(b) <= 64 {
+		return encodeMatrixTail(b, out)
+	}
+	return encodeBlockTail(b, out)
 }
 
 // encodeVariable is the string-returning limb-based encoder for inputs of
@@ -203,9 +212,9 @@ func encodeVariable(bin []byte) string {
 
 // AppendEncode appends the base58 encoding of src to dst and returns the
 // extended buffer. It is the zero-allocation counterpart of Encode: with a
-// dst of sufficient capacity it does not allocate (except for inputs larger
-// than 256 bytes, which use a heap scratch buffer). 32 and 64-byte inputs
-// dispatch to the matrix-multiply fast paths.
+// dst of sufficient capacity it does not allocate for inputs through roughly
+// 1 KiB. Large inputs use math/big scratch to avoid quadratic block-Horner
+// scaling. Exact 32 and 64-byte inputs dispatch to the dedicated matrix paths.
 func AppendEncode(dst []byte, src []byte) []byte {
 	switch len(src) {
 	case 0:
@@ -231,15 +240,18 @@ func AppendEncode(dst []byte, src []byte) []byte {
 	}
 
 	size := encodeVariableSize(nz)
-	var scratchArr [360]byte // fits any input up to 256 bytes
-	var scratch []byte
-	if size <= len(scratchArr) {
-		scratch = scratchArr[:size]
+	start := len(dst)
+	total := start + size
+	if cap(dst) < total {
+		grown := make([]byte, total)
+		copy(grown, dst)
+		dst = grown
 	} else {
-		scratch = make([]byte, size)
+		dst = dst[:total]
 	}
-	p := encodeTail(src[zcount:], scratch)
-	return append(dst, scratch[p:]...)
+	p := encodeTail(src[zcount:], dst[start:])
+	copy(dst[start:], dst[start+p:])
+	return dst[:len(dst)-p]
 }
 
 // Encode32 encodes a 32-byte array to a base58 string.

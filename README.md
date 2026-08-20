@@ -59,7 +59,76 @@ for _, pk := range pubkeys {
 
 ### Comparisons
 
-Same machine (Go 1.26.1, Intel i7-9700K under WSL2, AVX2, one pinned CPU,
+The new corpus benchmarks use the same 4,096 deterministic inputs at each
+size and compare the zero-allocation APIs: this package's `AppendEncode` /
+`AppendDecode` against base58-turbo v0.3.0's `encode_into` / `decode_into`.
+Representative results on an Intel i7-9700K under WSL2 (AVX2, one pinned
+CPU, Go 1.24.0, Rust 1.89.0; Turbo commit `18c8f94`) are:
+
+| Payload | Go encode | Turbo encode | Go decode | Turbo decode |
+|---:|---:|---:|---:|---:|
+| 16 B | **~44.7 ns** | ~50.4 ns | **~39.2 ns** | ~48.4 ns |
+| 32 B | ~43.8 ns | **~38.7 ns** | **~47.7 ns** | ~55.3 ns |
+| 48 B | ~136 ns | **~74.0 ns** | ~93.2 ns | **~51.1 ns** |
+| 64 B | ~93.2 ns | **~61.8 ns** | ~75.0 ns | **~62.7 ns** |
+| 128 B | ~444 ns | **~431 ns** | ~350 ns | **~219 ns** |
+| 1000 B | **~12.3 µs** | ~14.1 µs | ~11.7 µs | **~7.30 µs** |
+
+Both implementations allocate zero bytes in these encode-into benchmarks;
+this package now also allocates zero bytes for decode through 1 KiB. WSL2
+clock/scheduling noise is material, so treat differences below roughly 10%
+as parity and reproduce on the deployment CPU before choosing a package.
+Turbo's generic SIMD decoder remains clearly ahead at 48–128 bytes and its
+large scalar decoder leads at 1 KiB; this Go package leads the measured
+16-byte decode and 1 KiB encode cases.
+
+Against this package's previous variable encoder, the retained changes give:
+
+| `AppendEncode` payload | Before | Now | Improvement |
+|---:|---:|---:|---:|
+| 16 B | ~72 ns | ~37 ns | **~1.9x** |
+| 48 B | ~197 ns | ~130 ns | **~1.5x** |
+| 65 B | ~318 ns | ~184 ns | **~1.7x** |
+| 100 B | ~529 ns | ~375 ns | **~1.4x** |
+| 128 B | ~820 ns | ~425 ns | **~1.9x** |
+| 1000 B | ~34.9 µs, 2 allocs | ~10.5–12.3 µs, 0 allocs | **~2.8–3.3x** |
+
+The block-radix path is portable; amd64 additionally uses AVX2 for the
+18-term block convolution and padded 33–63-byte matrix path. Decoder scratch
+size classes remove the prior allocation at 256 B and 1 KiB without adopting
+Turbo's 10-character grouping, which regressed the Go 1 KiB decoder from
+~10–11 µs to ~14 µs in A/B testing.
+
+#### Large account payloads
+
+Solana account state can reach 10 MiB, so the package has a separate
+large-input tier rather than extending the block-Horner algorithm indefinitely.
+Encode switches to `math/big`'s recursive base conversion at 32 KiB; decode
+switches to a divide-and-conquer tree at 8 KiB. Both produce the same canonical
+Bitcoin Base58 representation as the smaller paths.
+
+Single-iteration, single-core measurements from the same machine:
+
+| Binary payload | AppendEncode | Encode scratch | AppendDecode | Decode scratch |
+|---:|---:|---:|---:|---:|
+| 1 MiB | 1.60 s | 36.0 MB | 0.550 s | 55.7 MB |
+| 5 MiB | 20.5 s | 235 MB | 7.39 s | 307 MB |
+| 10 MiB | 47.9 s | 485 MB | 26.0 s | 678 MB |
+
+Before the large-input tier, 1 MiB took 11.8 s to encode and 14.1 s to
+decode; quadratic scaling made 5/10 MiB impractical. The new path is much
+faster, but canonical Base58 conversion of a 10 MiB integer remains expensive.
+RPC callers that control the requested encoding should still prefer base64;
+the table above is the expected cost when Base58 is required.
+
+For comparison, base58-turbo v0.3.0's allocating unbounded API took 9.74 s
+to encode and 5.89 s to decode the same 1 MiB payload on the pinned core. The
+new Go tier was approximately 6.1x faster for encode and 10.7x for decode there.
+Turbo's 5/10 MiB cases were not run because its unbounded path retains the
+quadratic block fold.
+
+For historical context, the earlier generic-API comparison used the same
+machine (Go 1.26.1, Intel i7-9700K under WSL2, AVX2, one pinned CPU,
 `GOMAXPROCS=1`), same 4,096 deterministic inputs per size, and both sides
 measured in the same benchmark binary through the generic
 `Encode([]byte)`/`Decode(string)` entry points. Results are medians of five
@@ -95,10 +164,27 @@ zero allocations for decode/append):
 | Encode64Batch (per key) | ~100.2 | 2 per batch |
 | Decode64 | ~59.9 | 0 |
 
-The comparison benchmark is not checked in (keeping the module
-dependency-free). To reproduce it, benchmark against the current
-`solana-foundation/solana-go/base58` checkout in a temporary module, using
-the same input corpus for both implementations.
+The dependency-free corpus benchmarks are checked in as
+`BenchmarkBase58_AppendEncodeCorpus` and
+`BenchmarkBase58_AppendDecodeCorpus`. Reproduce the Go side with:
+
+```sh
+GOMAXPROCS=1 go test -run '^$' \
+  -bench 'BenchmarkBase58_Append(Encode|Decode)Corpus' \
+  -benchmem -benchtime=1s -count=5
+```
+
+Large account benchmarks intentionally run once:
+
+```sh
+GOMAXPROCS=1 go test -run '^$' \
+  -bench 'BenchmarkBase58_Append(Encode|Decode)Large' \
+  -benchmem -benchtime=1x -count=1
+```
+
+For the Turbo comparison, mirror `benchmarkCorpus` in a temporary Criterion
+benchmark at v0.3.0 and rotate through the same 4,096 values. The module
+remains free of comparison-only dependencies.
 
 Correctness is cross-validated against Bitcoin Core / bs58 / fd_base58 /
 five8 test vectors, randomized round-trips against the independent
@@ -112,6 +198,8 @@ and cross-architecture builds.
 This package contains an Apache-2.0-licensed Go/assembly port derived from
 Firedancer's base58 implementation and the corresponding solana-go port. See
 `LICENSE` and `NOTICE` for the retained upstream terms and attribution.
+The variable-width performance work was informed by the
+`hacer-bark/base58-turbo` project.
 
 Original modifications and additions authored by AlphaBatem Labs are also
 available under the scoped MIT terms in `LICENSE-MIT`. That MIT grant applies

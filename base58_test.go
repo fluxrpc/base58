@@ -13,6 +13,30 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// encodeDivisionReference keeps the pre-matrix/pre-block long-division path
+// available as an independent oracle for every optimized encoder width.
+func encodeDivisionReference(src []byte) string {
+	zeros := 0
+	for zeros < len(src) && src[zeros] == 0 {
+		zeros++
+	}
+	if zeros == len(src) {
+		out := make([]byte, zeros)
+		for i := range out {
+			out[i] = '1'
+		}
+		return string(out)
+	}
+
+	out := make([]byte, zeros+encodeVariableSize(len(src)-zeros))
+	p := encodeVariableTail(src[zeros:], out)
+	for range zeros {
+		p--
+		out[p] = '1'
+	}
+	return string(out[p:])
+}
+
 // Known test vectors cross-validated against multiple base58 implementations
 // (Bitcoin Core, bs58, mr-tron, five8). Any implementation that encodes these
 // bytes to the given strings — and decodes them back — is bit-compatible.
@@ -108,7 +132,7 @@ func TestRoundtrip32_Random(t *testing.T) {
 		rand.Read(src[:])
 
 		encoded := Encode(src[:])
-		assert.Equal(t, encodeVariable(src[:]), encoded, "encode mismatch for %x", src)
+		assert.Equal(t, encodeDivisionReference(src[:]), encoded, "encode mismatch for %x", src)
 
 		var decoded [32]byte
 		require.NoError(t, Decode32(encoded, &decoded))
@@ -126,7 +150,7 @@ func TestRoundtrip64_Random(t *testing.T) {
 		rand.Read(src[:])
 
 		encoded := Encode(src[:])
-		assert.Equal(t, encodeVariable(src[:]), encoded, "encode mismatch for %x", src)
+		assert.Equal(t, encodeDivisionReference(src[:]), encoded, "encode mismatch for %x", src)
 
 		var decoded [64]byte
 		require.NoError(t, Decode64(encoded, &decoded))
@@ -232,15 +256,47 @@ func TestAppendEncode_MatchesEncode(t *testing.T) {
 	}
 }
 
+func TestEncodeVariableWidthsMatchDivisionReference(t *testing.T) {
+	for _, n := range []int{9, 12, 16, 31, 33, 48, 63, 65, 79, 100, 127, 128, 129, 191, 192, 193, 256, 511, 512, 513, 1000} {
+		for iter := range 25 {
+			src := make([]byte, n)
+			_, _ = rand.Read(src)
+			zeros := iter % 9
+			clear(src[:zeros])
+			assert.Equal(t, encodeDivisionReference(src), Encode(src), "n=%d zeros=%d", n, zeros)
+		}
+	}
+}
+
+func TestLargePathsMatchDivisionReference(t *testing.T) {
+	for _, n := range []int{largeEncodeThreshold - 1, largeEncodeThreshold, largeEncodeThreshold + 1, 64 << 10} {
+		src := make([]byte, n)
+		_, _ = rand.Read(src)
+		clear(src[:7])
+		encoded := Encode(src)
+		assert.Equal(t, encodeDivisionReference(src), encoded, "n=%d", n)
+		decoded, err := Decode(encoded)
+		require.NoError(t, err)
+		assert.Equal(t, src, decoded, "n=%d", n)
+	}
+
+	invalid := bytes.Repeat([]byte{'2'}, largeDecodeThreshold)
+	invalid[len(invalid)-1] = '0'
+	_, err := Decode(string(invalid))
+	assert.ErrorIs(t, err, ErrInvalidChar)
+}
+
 func TestAppendEncode_ZeroAlloc(t *testing.T) {
-	src := make([]byte, 100)
-	rand.Read(src)
-	buf := make([]byte, 0, 256)
-	allocs := testing.AllocsPerRun(100, func() {
-		buf = AppendEncode(buf[:0], src)
-	})
-	assert.Zero(t, allocs)
-	assert.Equal(t, Encode(src), string(buf))
+	for _, size := range []int{100, 256, 1000} {
+		src := make([]byte, size)
+		_, _ = rand.Read(src)
+		buf := make([]byte, 0, encodeVariableSize(size))
+		allocs := testing.AllocsPerRun(100, func() {
+			buf = AppendEncode(buf[:0], src)
+		})
+		assert.Zero(t, allocs, "size=%d", size)
+		assert.Equal(t, Encode(src), string(buf), "size=%d", size)
+	}
 }
 
 func TestAppendDecode_MatchesDecode(t *testing.T) {
@@ -274,15 +330,17 @@ func TestAppendDecode_MatchesDecode(t *testing.T) {
 }
 
 func TestAppendDecode_ZeroAlloc(t *testing.T) {
-	src := make([]byte, 100)
-	rand.Read(src)
-	encoded := Encode(src)
-	buf := make([]byte, 0, 128)
-	allocs := testing.AllocsPerRun(100, func() {
-		buf, _ = AppendDecode(buf[:0], encoded)
-	})
-	assert.Zero(t, allocs)
-	assert.Equal(t, src, buf)
+	for _, size := range []int{100, 256, 1000} {
+		src := make([]byte, size)
+		_, _ = rand.Read(src)
+		encoded := Encode(src)
+		buf := make([]byte, 0, size)
+		allocs := testing.AllocsPerRun(100, func() {
+			buf, _ = AppendDecode(buf[:0], encoded)
+		})
+		assert.Zero(t, allocs, "size=%d", size)
+		assert.Equal(t, src, buf, "size=%d", size)
+	}
 }
 
 func TestDecode_InvalidChars(t *testing.T) {
@@ -431,7 +489,7 @@ func BenchmarkBase58_EncodeVariable(b *testing.B) {
 }
 
 func BenchmarkBase58_AppendEncodeVariable(b *testing.B) {
-	for _, n := range []int{16, 100, 1000} {
+	for _, n := range []int{12, 16, 48, 65, 100, 128, 256, 1000} {
 		src := make([]byte, n)
 		rand.Read(src)
 		buf := make([]byte, 0, 2048)
@@ -439,6 +497,115 @@ func BenchmarkBase58_AppendEncodeVariable(b *testing.B) {
 			b.SetBytes(int64(n))
 			for b.Loop() {
 				buf = AppendEncode(buf[:0], src)
+			}
+		})
+	}
+}
+
+func BenchmarkBase58_AppendDecodeVariable(b *testing.B) {
+	for _, n := range []int{16, 48, 100, 128, 256, 1000} {
+		src := make([]byte, n)
+		rand.Read(src)
+		encoded := Encode(src)
+		buf := make([]byte, 0, n)
+		b.Run(fmt.Sprintf("len=%d", n), func(b *testing.B) {
+			b.SetBytes(int64(n))
+			for b.Loop() {
+				buf, _ = AppendDecode(buf[:0], encoded)
+			}
+		})
+	}
+}
+
+// benchmarkCorpus matches the deterministic 4,096-value corpus used by the
+// temporary base58-turbo comparison harness, allowing encode_into/decode_into
+// to be compared with the Append APIs here without making it a Go dependency.
+func benchmarkCorpus(size int) [][]byte {
+	const count = 4096
+	corpus := make([][]byte, count)
+	for seed := range count {
+		corpus[seed] = benchmarkCorpusValue(size, seed)
+	}
+	return corpus
+}
+
+func benchmarkCorpusValue(size, seed int) []byte {
+	data := make([]byte, size)
+	x := uint64(0x9e3779b97f4a7c15) ^ uint64(seed+1)*uint64(0xd6e8feb86659fd93)
+	for i := range data {
+		x ^= x << 7
+		x ^= x >> 9
+		x ^= x << 8
+		data[i] = byte(x)
+	}
+	if data[0] == 0 {
+		data[0] = 1
+	}
+	return data
+}
+
+func BenchmarkBase58_AppendEncodeCorpus(b *testing.B) {
+	for _, size := range []int{16, 32, 48, 64, 128, 1000} {
+		corpus := benchmarkCorpus(size)
+		buf := make([]byte, 0, size*138/100+1)
+		b.Run(fmt.Sprintf("len=%d", size), func(b *testing.B) {
+			b.SetBytes(int64(size))
+			i := 0
+			for b.Loop() {
+				buf = AppendEncode(buf[:0], corpus[i&(len(corpus)-1)])
+				i++
+			}
+		})
+	}
+}
+
+func BenchmarkBase58_AppendDecodeCorpus(b *testing.B) {
+	for _, size := range []int{16, 32, 48, 64, 128, 1000} {
+		corpus := benchmarkCorpus(size)
+		encoded := make([]string, len(corpus))
+		for i := range corpus {
+			encoded[i] = Encode(corpus[i])
+		}
+		buf := make([]byte, 0, size)
+		b.Run(fmt.Sprintf("len=%d", size), func(b *testing.B) {
+			b.SetBytes(int64(size))
+			i := 0
+			for b.Loop() {
+				buf, _ = AppendDecode(buf[:0], encoded[i&(len(encoded)-1)])
+				i++
+			}
+		})
+	}
+}
+
+func BenchmarkBase58_AppendEncodeLarge(b *testing.B) {
+	for _, tc := range []struct {
+		name string
+		size int
+	}{{"1MiB", 1 << 20}, {"5MiB", 5 << 20}, {"10MiB", 10 << 20}} {
+		src := benchmarkCorpusValue(tc.size, 0)
+		buf := make([]byte, 0, tc.size*138/100+1)
+		b.Run(tc.name, func(b *testing.B) {
+			b.SetBytes(int64(tc.size))
+			for b.Loop() {
+				buf = AppendEncode(buf[:0], src)
+			}
+		})
+	}
+}
+
+func BenchmarkBase58_AppendDecodeLarge(b *testing.B) {
+	for _, tc := range []struct {
+		name string
+		size int
+	}{{"1MiB", 1 << 20}, {"5MiB", 5 << 20}, {"10MiB", 10 << 20}} {
+		src := benchmarkCorpusValue(tc.size, 0)
+		encoded := Encode(src)
+		buf := make([]byte, 0, tc.size)
+		b.Run(tc.name, func(b *testing.B) {
+			b.SetBytes(int64(tc.size))
+			for b.Loop() {
+				buf, _ = AppendDecode(buf[:0], encoded)
 			}
 		})
 	}
