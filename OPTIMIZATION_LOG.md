@@ -840,3 +840,30 @@ fuzz executions pass. Checkptr's instrumentation-only allocation-count changes
 were excluded from its run; the ordinary zero-allocation assertions pass.
 
 ---
+
+## 2026-08-27 — Attempt 28: escape-aware AppendEncode32 ABI ✅
+
+The exported AppendEncode32 function was implemented directly in assembly.
+That hid two important facts from Go's escape analysis: the returned slice
+aliases dst, while src is consumed only during the call. Consequently, callers
+that passed an owned value as src paid a second 32-byte allocation even though
+the assembly never retained it.
+
+Moved capacity growth and slice construction into a small Go wrapper and
+reduced the private assembly entry point to the actual no-grow operation:
+two non-escaping pointers in, encoded length out. Besides exposing the correct
+ownership to the compiler, this removes slice ABI marshaling and the AVX2/cap
+branches from the assembly hot path.
+
+Pinned i7-9700K medians from same-machine before/after runs:
+
+| Operation | before | after | allocation change |
+|---|---:|---:|---:|
+| AppendEncode32, reused dst | 80.1 ns | 39.7 ns | 0 → 0 |
+| AppendEncode32, owned src/output | 226.6 ns | 65.4 ns | 80 B / 2 → 48 B / 1 |
+
+The owned benchmark models value-receiver text encoders and similar adapters.
+Normal tests, race, aggressive checkptr, vet/assembly checks, and an arm64
+cross-build pass.
+
+---

@@ -460,10 +460,11 @@ func BenchmarkBase58_Decode_Variable(b *testing.B) {
 
 // Benchmarks
 var (
-	benchSrc32 [32]byte
-	benchSrc64 [64]byte
-	benchStr32 string
-	benchStr64 string
+	benchSrc32     [32]byte
+	benchSrc64     [64]byte
+	benchStr32     string
+	benchStr64     string
+	benchEncoded32 []byte
 )
 
 func init() {
@@ -676,6 +677,14 @@ func BenchmarkBase58_AppendEncode32(b *testing.B) {
 	b.SetBytes(32)
 	for b.Loop() {
 		buf = AppendEncode32(buf[:0], src)
+	}
+}
+
+func BenchmarkBase58_AppendEncode32Owned(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		src := benchSrc32
+		benchEncoded32 = AppendEncode32(make([]byte, 0, EncodedMaxLen32), &src)
 	}
 }
 
