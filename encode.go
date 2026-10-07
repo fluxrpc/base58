@@ -284,11 +284,18 @@ func encode64Generic(src *[64]byte) string {
 // appendEncode32Generic is the portable AppendEncode32 implementation.  The
 // architecture wrappers select it directly or use it as their scalar fallback.
 func appendEncode32Generic(dst []byte, src *[32]byte) []byte {
+	return appendEncode32GenericCapacity(dst, src, 0)
+}
+
+// appendEncode32GenericCapacity reserves at least minEncodedCap bytes for the
+// encoding when growing. An existing buffer that fits the actual encoding is
+// always reused, even if it has less than minEncodedCap bytes available.
+func appendEncode32GenericCapacity(dst []byte, src *[32]byte, minEncodedCap int) []byte {
 	var raw [raw58Buf32]byte
 	outLen, skip := encode32Render(src, &raw)
 	total := len(dst) + outLen
 	if cap(dst) < total {
-		grown := make([]byte, total)
+		grown := make([]byte, total, len(dst)+max(outLen, minEncodedCap))
 		copy(grown, dst)
 		dst = grown
 	} else {

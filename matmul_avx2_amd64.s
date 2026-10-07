@@ -538,10 +538,11 @@ TEXT ·digitsToChars8(SB), NOSPLIT, $0-16
 	MOVBLZX (CX)(R9*1), AX; \
 	MOVB AX, O(DI)
 
-TEXT ·encode32AppendAVX2(SB), NOSPLIT, $192-24
+// Frame: intermediate[9]uint64 at 0(SP), raw[45]byte at 72(SP).
+TEXT ·encode32AppendAVX2(SB), NOSPLIT, $128-24
 	MOVQ	src+0(FP), SI
-	LEAQ	128(SP), DI
-	LEAQ	56(SP), R12
+	LEAQ	72(SP), DI
+	LEAQ	0(SP), R12
 	LEAQ	·encWide32(SB), DX
 	VPXOR	Y0, Y0, Y0
 	VPXOR	Y1, Y1, Y1

@@ -5,8 +5,11 @@ package base58
 // AppendEncode32 appends the base58 encoding of src to dst and returns the
 // extended buffer. It allocates only if dst has insufficient capacity.
 func AppendEncode32(dst []byte, src *[32]byte) []byte {
-	if !useAVX2 || cap(dst)-len(dst) < EncodedMaxLen32 {
+	if !useAVX2 {
 		return appendEncode32Generic(dst, src)
+	}
+	if cap(dst)-len(dst) < EncodedMaxLen32 {
+		return appendEncode32GenericCapacity(dst, src, EncodedMaxLen32)
 	}
 	start := len(dst)
 	dst = dst[:start+EncodedMaxLen32]
