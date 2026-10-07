@@ -19,6 +19,59 @@ func TestAVX2AvailableWhenRequired(t *testing.T) {
 	}
 }
 
+func TestAppendEncode32_ScalarCapacityAndLeadingZeros(t *testing.T) {
+	previous := useAVX2
+	useAVX2 = false
+	t.Cleanup(func() { useAVX2 = previous })
+	testAppendEncode32CapacityAndLeadingZeros(t)
+}
+
+var append32GrowthResult []byte
+
+func TestAppendEncode32_AVX2GrowthCapacity(t *testing.T) {
+	if !useAVX2 {
+		t.Skip("AVX2 not available")
+	}
+	for _, tc := range []struct {
+		name string
+		src  [32]byte
+	}{
+		{"zero", [32]byte{}},
+		{"leadingZeros", [32]byte{31: 1}},
+		{"43chars", [32]byte{1}},
+		{"44chars", [32]byte{255}},
+	} {
+		for _, prefix := range []string{"", "pubkey="} {
+			t.Run(tc.name+"/"+prefix, func(t *testing.T) {
+				dst := make([]byte, len(prefix))
+				copy(dst, prefix)
+				want := prefix + encodeDivisionReference(tc.src[:])
+				got := AppendEncode32(dst, &tc.src)
+				if string(got) != want {
+					t.Fatalf("got %q, want %q", got, want)
+				}
+				if cap(got) != len(prefix)+EncodedMaxLen32 {
+					t.Fatalf("capacity = %d, want %d", cap(got), len(prefix)+EncodedMaxLen32)
+				}
+				wantAllocs := 1.0
+				if len(want)-len(prefix) == EncodedMaxLen32 {
+					wantAllocs = 2 // The maximum-length encoding leaves no spare byte.
+				}
+				allocs := testing.AllocsPerRun(100, func() {
+					out := AppendEncode32(dst, &tc.src)
+					append32GrowthResult = append(out, '!')
+				})
+				if allocs != wantAllocs {
+					t.Fatalf("encode plus suffix allocated %g times, want %g", allocs, wantAllocs)
+				}
+				if string(append32GrowthResult) != want+"!" {
+					t.Fatalf("got %q, want %q", append32GrowthResult, want+"!")
+				}
+			})
+		}
+	}
+}
+
 // TestScalarFallback_Matches runs the fixed-size paths with the AVX2 kernels
 // disabled and cross-checks results against the default configuration, so the
 // scalar assembly stays covered on AVX2 machines.
