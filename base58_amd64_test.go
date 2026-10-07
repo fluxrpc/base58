@@ -19,6 +19,13 @@ func TestAVX2AvailableWhenRequired(t *testing.T) {
 	}
 }
 
+func TestAppendEncode32_ScalarCapacityAndLeadingZeros(t *testing.T) {
+	previous := useAVX2
+	useAVX2 = false
+	t.Cleanup(func() { useAVX2 = previous })
+	testAppendEncode32CapacityAndLeadingZeros(t)
+}
+
 // TestScalarFallback_Matches runs the fixed-size paths with the AVX2 kernels
 // disabled and cross-checks results against the default configuration, so the
 // scalar assembly stays covered on AVX2 machines.

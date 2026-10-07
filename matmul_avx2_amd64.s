@@ -507,7 +507,7 @@ TEXT ·digitsToChars8(SB), NOSPLIT, $0-16
 	VZEROUPPER
 	RET
 
-// func AppendEncode32(dst []byte, src *[32]byte) []byte
+// func encode32AppendAVX2(src *[32]byte, dst *byte) int
 //
 // Fuses matrix multiplication, carry propagation, pair-LUT digit extraction,
 // trimming, and final stores.  Each normalized remainder is rendered as soon
@@ -538,15 +538,8 @@ TEXT ·digitsToChars8(SB), NOSPLIT, $0-16
 	MOVBLZX (CX)(R9*1), AX; \
 	MOVB AX, O(DI)
 
-TEXT ·AppendEncode32(SB), NOSPLIT, $192-56
-	CMPB	·useAVX2(SB), $0
-	JEQ	append32_slow
-	MOVQ	dst_cap+16(FP), AX
-	SUBQ	dst_len+8(FP), AX
-	CMPQ	AX, $44
-	JLT	append32_slow
-
-	MOVQ	src+24(FP), SI
+TEXT ·encode32AppendAVX2(SB), NOSPLIT, $192-24
+	MOVQ	src+0(FP), SI
 	LEAQ	128(SP), DI
 	LEAQ	56(SP), R12
 	LEAQ	·encWide32(SB), DX
@@ -699,7 +692,7 @@ TEXT ·AppendEncode32(SB), NOSPLIT, $192-56
 	// A non-zero first byte guarantees a 43- or 44-character result, so the
 	// fixed 45-digit stream has exactly one or two leading zero digits.  This
 	// is overwhelmingly the common case and avoids both leading-zero loops.
-	MOVQ	src+24(FP), SI
+	MOVQ	src+0(FP), SI
 	XORQ	CX, CX
 	CMPB	0(SI), $0
 	JEQ	direct_scan_zeros
@@ -711,16 +704,10 @@ direct_raw_done:
 	MOVQ	$45, AX
 	SUBQ	DX, AX                    // output length
 	MOVQ	AX, R14
-	ADDQ	dst_len+8(FP), AX
-	MOVQ	dst_base+0(FP), CX
-	MOVQ	CX, ret_base+32(FP)
-	MOVQ	AX, ret_len+40(FP)
-	MOVQ	dst_cap+16(FP), CX
-	MOVQ	CX, ret_cap+48(FP)
+	MOVQ	AX, ret+16(FP)
 
 	ADDQ	DX, DI                    // trimmed raw source
-	MOVQ	dst_base+0(FP), SI
-	ADDQ	dst_len+8(FP), SI
+	MOVQ	dst+8(FP), SI
 	VMOVDQU	0(DI), Y0
 	VMOVDQU	Y0, 0(SI)
 	VMOVDQU	-16(DI)(R14*1), X0
@@ -748,24 +735,6 @@ direct_raw_zeros:
 	JNE	direct_raw_done
 	INCQ	DX
 	JMP	direct_raw_zeros
-
-append32_slow:
-	MOVQ	dst_base+0(FP), AX
-	MOVQ	AX, 0(SP)
-	MOVQ	dst_len+8(FP), AX
-	MOVQ	AX, 8(SP)
-	MOVQ	dst_cap+16(FP), AX
-	MOVQ	AX, 16(SP)
-	MOVQ	src+24(FP), AX
-	MOVQ	AX, 24(SP)
-	CALL	·appendEncode32Slow(SB)
-	MOVQ	32(SP), AX
-	MOVQ	AX, ret_base+32(FP)
-	MOVQ	40(SP), AX
-	MOVQ	AX, ret_len+40(FP)
-	MOVQ	48(SP), AX
-	MOVQ	AX, ret_cap+48(FP)
-	RET
 
 #undef RENDER5
 
